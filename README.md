@@ -1,3 +1,6 @@
+# varibad_working
+see if you can use varibad to run metaworld
+readme from varibad below:
 # VariBAD
 
 Code for the paper "[VariBAD: A very good method for Bayes-Adaptive Deep RL via Meta-Learning](https://arxiv.org/abs/1910.08348)" - 
@@ -105,3 +108,4 @@ Since actions/rewards aren't available at the first time step,
 another option would be to just fill them with zeros.
 - I added an example environment with empty methods in `environments/example_env.py`,
 if you want to know what an environment should do.
+
