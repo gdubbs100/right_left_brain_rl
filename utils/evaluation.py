@@ -128,7 +128,7 @@ def visualise_behaviour(args,
                         rank_offset=args.num_processes + 42,  # not sure if the temp folders would otherwise clash
                         tasks=tasks
                         )
-    episode_task = torch.from_numpy(np.array(env.get_task())).to(device).float()
+    # episode_task = torch.from_numpy(np.array(env.get_task())).to(device).float()
 
     # get a sample rollout
     unwrapped_env = env.venv.unwrapped.envs[0]
@@ -159,6 +159,7 @@ def visualise_behaviour(args,
                      )
 
         if not (args.disable_decoder and args.disable_kl_term):
+            episode_task = torch.from_numpy(np.array(env.get_task())).to(device).float()
             plot_vae_loss(args,
                           latent_means,
                           latent_logvars,
