@@ -100,3 +100,13 @@ register(
     entry_point='environments.navigation.gridworld:GridNavi',
     kwargs={'num_cells': 5, 'num_steps': 15},
 )
+
+#
+# # Metaworld
+# # ----------------------------------------
+
+register(
+    'ML10-v2',
+    entry_point='environments.metaworld_envs.custom_varibad_env:ML10Env',
+    max_episode_steps=500,
+)

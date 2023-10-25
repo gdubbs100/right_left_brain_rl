@@ -4,6 +4,7 @@ from gym import spaces
 from gym.envs.registration import load
 
 from environments.mujoco import rand_param_envs
+from gymnasium.spaces.box import Box as gymnasium_box
 
 try:
     # this is to suppress some warnings (in the newer mujoco versions)
@@ -54,7 +55,9 @@ class VariBadWrapper(gym.Wrapper):
 
         if self.add_done_info:
             if isinstance(self.observation_space, spaces.Box) or isinstance(self.observation_space,
-                                                                            rand_param_envs.gym.spaces.box.Box):
+                                                                            gymnasium_box
+                                                                            # rand_param_envs.gym.spaces.box.Box
+                                                                            ):
                 if len(self.observation_space.shape) > 1:
                     raise ValueError  # can't add additional info for obs of more than 1D
                 self.observation_space = spaces.Box(low=np.array([*self.observation_space.low, 0]),
