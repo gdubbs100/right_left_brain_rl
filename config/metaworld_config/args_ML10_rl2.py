@@ -50,7 +50,7 @@ def get_args(rest_args):
     parser.add_argument('--norm_actions_post_sampling', type=boolean_argument, default=False, help='normalise policy output')
 
     # network
-    parser.add_argument('--policy_layers', nargs='+', default=[128])
+    parser.add_argument('--policy_layers', nargs='+', default=[256])
     parser.add_argument('--policy_activation_function', type=str, default='tanh', help='tanh/relu/leaky-relu')
     parser.add_argument('--policy_initialisation', type=str, default='normc', help='normc/orthogonal')
     parser.add_argument('--policy_anneal_lr', type=boolean_argument, default=False)
@@ -120,7 +120,7 @@ def get_args(rest_args):
     parser.add_argument('--state_embedding_size', type=int, default=32)
     parser.add_argument('--reward_embedding_size', type=int, default=16)
     parser.add_argument('--encoder_layers_before_gru', nargs='+', type=int, default=[])
-    parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
+    parser.add_argument('--encoder_gru_hidden_size', type=int, default=256, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])
 
     # - decoder: rewards
