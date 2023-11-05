@@ -104,7 +104,7 @@ class CustomOnlineStorage(object):
 
         self.to_device()
 
-    def to_device(self):
+    def to_device(self, device = device):
 
         self.prev_state = self.prev_state.to(device)
         self.latent = [t.to(device) for t in self.latent]
@@ -245,16 +245,17 @@ class CustomOnlineStorage(object):
 ### TODO: update as appropriate
     def before_update(self, policy):
         # this is about building the computation graph during training
-        latent = utl.get_latent_for_policy(self.args,
-                                           latent_sample=torch.stack(
-                                               self.latent_samples[:-1]) if self.latent_samples is not None else None,
-                                           latent_mean=torch.stack(
-                                               self.latent_mean[:-1]) if self.latent_mean is not None else None,
-                                           latent_logvar=torch.stack(
-                                               self.latent_logvar[:-1]) if self.latent_mean is not None else None)
+        # latent = utl.get_latent_for_policy(self.args,
+        #                                    latent_sample=torch.stack(
+        #                                        self.latent_samples[:-1]) if self.latent_samples is not None else None,
+        #                                    latent_mean=torch.stack(
+        #                                        self.latent_mean[:-1]) if self.latent_mean is not None else None,
+        #                                    latent_logvar=torch.stack(
+        #                                        self.latent_logvar[:-1]) if self.latent_mean is not None else None)
         # might need to update this for combined policy /
+        ## TODO: review if we need initial latent?
         _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         latent,
+                                                         torch.stack(self.latent),
                                                          None,
                                                          None,
                                                         #  self.beliefs[:-1] if self.beliefs is not None else None,
@@ -283,7 +284,9 @@ class CustomOnlineStorage(object):
             drop_last=True)
         for indices in sampler:
             state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            latent_batch = torch.cat(self.latent[:-1])[indices]
+            # latent_batch = torch.cat(self.latent[:-1])[indices]
+            ## TODO: why the [:-1] in the base version?
+            latent_batch = torch.cat(self.latent)[indices]
             # if self.args.pass_state_to_policy:
             #     state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
             # else:
@@ -314,7 +317,5 @@ class CustomOnlineStorage(object):
             else:
                 adv_targ = advantages.reshape(-1, 1)[indices]
 
-            yield state_batch, belief_batch, task_batch, \
-                  actions_batch, \
-                  latent_batch, \
+            yield state_batch, actions_batch, latent_batch, \
                   value_preds_batch, return_batch, old_action_log_probs_batch, adv_targ
