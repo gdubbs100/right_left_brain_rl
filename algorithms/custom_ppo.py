@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+import warnings
 from utils import helpers as utl
 
 
@@ -67,13 +68,7 @@ class CustomPPO:
         advantages = policy_storage.returns[:-1] - policy_storage.value_preds[:-1]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
-        # if this is true, we will update the VAE at every PPO update
-        # otherwise, we update it after we update the policy
-
         # recompute embeddings (to build computation graph)
-        ## TODO: should I take the encoder from the self.actor_critic?
-        # utl.recompute_embeddings(policy_storage, encoder, sample=False, update_idx=0,
-        #                             detach_every= self.context_window if self.context_window is not None else None)
         self._recompute_embeddings(policy_storage, sample=False, update_idx=0,
                             detach_every= self.context_window if self.context_window is not None else None)
 
@@ -99,7 +94,6 @@ class CustomPPO:
 
                 # if not rlloss_through_encoder:
                 state_batch = state_batch.detach()
-                ## TODO: should I detach this this??
                 latent_batch = latent_batch.detach()
                     # if latent_sample_batch is not None:
                     #     latent_sample_batch = latent_sample_batch.detach()
@@ -208,7 +202,9 @@ class CustomPPO:
         h = policy_storage.hidden_states[0].detach()
         for i in range(policy_storage.actions.shape[0]):
             # reset hidden state of the GRU when we reset the task
-            h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i + 1])
+            h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i])
+            # not sure why this is i + 1?
+            # h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i + 1])
 
             _, tm, tl, h = self.actor_critic.encoder(
                 policy_storage.actions.float()[i:i + 1],
@@ -226,12 +222,12 @@ class CustomPPO:
 
         if update_idx == 0:
             try:
-                assert (torch.cat(policy_storage.latent) - torch.cat(latent[:-1])).sum() == 0
+                assert (torch.cat(policy_storage.latent) - torch.cat(latent)).sum() == 0
                 # assert (torch.cat(policy_storage.latent_mean) - torch.cat(latent_mean)).sum() == 0
                 # assert (torch.cat(policy_storage.latent_logvar) - torch.cat(latent_logvar)).sum() == 0
             except AssertionError:
                 warnings.warn('You are not recomputing the embeddings correctly!')
-                import pdb
-                pdb.set_trace()
+                # import pdb
+                # pdb.set_trace()
         
         policy_storage.latent = latent

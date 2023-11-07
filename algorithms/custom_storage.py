@@ -46,7 +46,9 @@ class CustomOnlineStorage(object):
         # self.latent_logvar = []
         # hidden states of RNN (necessary if we want to re-compute embeddings)
         self.hidden_size = hidden_size
+        ## TODO: this is why we have double zeros at the start...
         self.hidden_states = torch.zeros(num_steps + 1, num_processes, hidden_size)
+        # self.hidden_states = torch.zeros(num_steps, num_processes, hidden_size)
 
         self.beliefs = None
         self.tasks = None
@@ -113,6 +115,8 @@ class CustomOnlineStorage(object):
         # self.latent_logvar = [t.to(device) for t in self.latent_logvar]
         self.hidden_states = self.hidden_states.to(device)
         self.next_state = self.next_state.to(device)
+
+
         # if self.args.pass_state_to_policy:
         #     self.prev_state = self.prev_state.to(device)
         # if self.args.pass_latent_to_policy:
@@ -157,7 +161,9 @@ class CustomOnlineStorage(object):
         # self.latent_samples.append(latent_sample.detach().clone())
         # self.latent_mean.append(latent_mean.detach().clone())
         # self.latent_logvar.append(latent_logvar.detach().clone())
-        self.hidden_states[self.step + 1].copy_(hidden_states.detach())
+        ##TODO: what is going on here? why step+1?
+        self.hidden_states[self.step+1].copy_(hidden_states.detach())
+        # self.hidden_states[self.step].copy_(hidden_states.detach())
         # if self.args.pass_belief_to_policy:
         #     self.beliefs[self.step + 1].copy_(belief)
         # if self.args.pass_task_to_policy:
@@ -253,13 +259,11 @@ class CustomOnlineStorage(object):
         #                                    latent_logvar=torch.stack(
         #                                        self.latent_logvar[:-1]) if self.latent_mean is not None else None)
         # might need to update this for combined policy /
-        ## TODO: review if we need initial latent?
+
         _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         torch.stack(self.latent),
+                                                         torch.stack(self.latent[:-1]),
                                                          None,
                                                          None,
-                                                        #  self.beliefs[:-1] if self.beliefs is not None else None,
-                                                        #  self.tasks[:-1] if self.tasks is not None else None,
                                                          self.actions)
         self.action_log_probs = action_log_probs.detach()
 
