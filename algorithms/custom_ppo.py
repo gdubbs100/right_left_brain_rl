@@ -16,11 +16,12 @@ class CustomPPO:
                  policy_optimiser,
                  policy_anneal_lr,
                  train_steps,
-                 optimiser_vae=None,
+                #  optimiser_vae=None,
                  lr=None,
                  clip_param=0.2,
                  ppo_epoch=5,
                  num_mini_batch=5,
+                 max_grad_norm = 0.5,
                  eps=None,
                  use_huber_loss=True,
                  use_clipped_value_loss=True,
@@ -34,6 +35,7 @@ class CustomPPO:
         self.clip_param = clip_param
         self.ppo_epoch = ppo_epoch
         self.num_mini_batch = num_mini_batch
+        self.max_grad_norm = max_grad_norm
 
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
@@ -150,7 +152,8 @@ class CustomPPO:
                 loss.backward()
 
                 # clip gradients
-                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.args.policy_max_grad_norm)
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                # nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.args.policy_max_grad_norm)
 
                 # in oursetup loss is always through encoder
                 # if rlloss_through_encoder:
@@ -192,8 +195,11 @@ class CustomPPO:
 
         return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch
 
-    def act(self, actions, states, rewards, hidden_state, deterministic=False):
-        return self.actor_critic.act(actions, states, rewards, hidden_state, deterministic=False)
+    # def act(self, actions, states, rewards, hidden_state, deterministic=False):
+    #     return self.actor_critic.act(actions, states, rewards, hidden_state, deterministic=False)
+
+    def act(self, state, latent, belief, task, deterministic = False):
+        return self.actor_critic.act(state, latent, belief, task, deterministic)
     
     def _recompute_embeddings(self, policy_storage, sample, update_idx, detach_every):
         latent = [policy_storage.latent[0].detach().clone()]
