@@ -262,28 +262,8 @@ class CustomOnlineStorage(object):
             drop_last=True)
         for indices in sampler:
             state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            # latent_batch = torch.cat(self.latent[:-1])[indices]
-            ## TODO: why the [:-1] in the base version?
-            latent_batch = torch.cat(self.latent)[indices]
-            # if self.args.pass_state_to_policy:
-            #     state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            # else:
-            #     state_batch = None
-            # if self.args.pass_latent_to_policy:
-            #     latent_sample_batch = torch.cat(self.latent_samples[:-1])[indices]
-            #     latent_mean_batch = torch.cat(self.latent_mean[:-1])[indices]
-            #     latent_logvar_batch = torch.cat(self.latent_logvar[:-1])[indices]
-            # else:
-            #     latent_sample_batch = latent_mean_batch = latent_logvar_batch = None
-            # if self.args.pass_belief_to_policy:
-            #     belief_batch = self.beliefs[:-1].reshape(-1, *self.beliefs.size()[2:])[indices]
-            # else:
-            #     belief_batch = None
-            # if self.args.pass_task_to_policy:
-            #     task_batch = self.tasks[:-1].reshape(-1, *self.tasks.size()[2:])[indices]
-            # else:
-            #     task_batch = None
-
+            cat_latent = torch.cat(self.latent[:-1])
+            latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
             actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]
 
             value_preds_batch = self.value_preds[:-1].reshape(-1, 1)[indices]
