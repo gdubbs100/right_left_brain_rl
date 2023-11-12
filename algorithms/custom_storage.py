@@ -149,30 +149,14 @@ class CustomOnlineStorage(object):
                masks,
                bad_masks,
                done,
-               #
                hidden_states=None,
                latent = None
-            #    latent_sample=None,
-            #    latent_mean=None,
-            #    latent_logvar=None,
                ):
         self.prev_state[self.step + 1].copy_(state)
         self.latent.append(latent.detach().clone())
-        # self.latent_samples.append(latent_sample.detach().clone())
-        # self.latent_mean.append(latent_mean.detach().clone())
-        # self.latent_logvar.append(latent_logvar.detach().clone())
         ##TODO: what is going on here? why step+1?
         self.hidden_states[self.step+1].copy_(hidden_states.detach())
-        # self.hidden_states[self.step].copy_(hidden_states.detach())
-        # if self.args.pass_belief_to_policy:
-        #     self.beliefs[self.step + 1].copy_(belief)
-        # if self.args.pass_task_to_policy:
-        #     self.tasks[self.step + 1].copy_(task)
-        # if self.args.pass_latent_to_policy:
-        #     self.latent_samples.append(latent_sample.detach().clone())
-        #     self.latent_mean.append(latent_mean.detach().clone())
-        #     self.latent_logvar.append(latent_logvar.detach().clone())
-        #     self.hidden_states[self.step + 1].copy_(hidden_states.detach())
+
         self.actions[self.step] = actions.detach().clone()
         self.rewards_raw[self.step].copy_(rewards_raw)
         self.rewards_normalised[self.step].copy_(rewards_normalised)
@@ -186,24 +170,14 @@ class CustomOnlineStorage(object):
         self.step = (self.step + 1) % self.num_steps
 
     def after_update(self):
-        self.prev_state[0].copy_(self.prev_state[-1])
+        ## TODO: should we copy the last state over? this is just an RL2 meta-training thing?
+        ## set to torch.zeros_like for now
+        self.prev_state[0].copy_(torch.zeros_like(self.prev_state[-1]))
         self.latent = []
-        # self.latent_samples = []
-        # self.latent_mean = []
-        # self.latent_logvar = []
-        self.hidden_states[0].copy_(self.hidden_states[-1])
-        # if self.args.pass_belief_to_policy:
-        #     self.beliefs[0].copy_(self.beliefs[-1])
-        # if self.args.pass_task_to_policy:
-        #     self.tasks[0].copy_(self.tasks[-1])
-        # if self.args.pass_latent_to_policy:
-        #     self.latent_samples = []
-        #     self.latent_mean = []
-        #     self.latent_logvar = []
-        #     self.hidden_states[0].copy_(self.hidden_states[-1])
-        self.done[0].copy_(self.done[-1])
-        self.masks[0].copy_(self.masks[-1])
-        self.bad_masks[0].copy_(self.bad_masks[-1])
+        self.hidden_states[0].copy_(torch.zeros_like(self.hidden_states[-1]))
+        self.done[0].copy_(torch.zeros_like(self.done[-1]))
+        self.masks[0].copy_(torch.zeros_like(self.masks[-1]))
+        self.bad_masks[0].copy_(torch.zeros_like(self.bad_masks[-1]))
         self.action_log_probs = None
 
     def compute_returns(self, next_value, use_gae, gamma, tau, use_proper_time_limits=True):

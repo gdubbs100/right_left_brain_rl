@@ -97,7 +97,8 @@ class CustomPPO:
 
                 # if not rlloss_through_encoder:
                 state_batch = state_batch.detach()
-                latent_batch = latent_batch.detach()
+                ## TODO: I think I should not detach this
+                latent_batch = latent_batch#.detach()
                     # if latent_sample_batch is not None:
                     #     latent_sample_batch = latent_sample_batch.detach()
                     #     latent_mean_batch = latent_mean_batch.detach()
@@ -223,7 +224,7 @@ class CustomPPO:
                 detach_every=detach_every
             )
             # latent_sample.append(ts)
-            latent.append(torch.cat((tm, tl), dim = -1))
+            latent.append(torch.cat((tm, tl), dim = -1)[None,:])
             # latent_mean.append(tm)
             # latent_logvar.append(tl)
 
