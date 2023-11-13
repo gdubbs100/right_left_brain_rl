@@ -96,7 +96,7 @@ class CustomPPO:
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
                 # if not rlloss_through_encoder:
-                state_batch = state_batch.detach()
+                # state_batch = state_batch.detach() # state batch is none because rl2
                 ## TODO: I think I should not detach this
                 latent_batch = latent_batch#.detach()
                     # if latent_sample_batch is not None:
@@ -114,9 +114,9 @@ class CustomPPO:
                     self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch,
                                                        belief=None, task=None,
                                                        action=actions_batch)
-
-                ratio = torch.exp(action_log_probs -
-                                  old_action_log_probs_batch)
+                # set to double to avoid Inf values
+                ratio = torch.exp(action_log_probs.double() -
+                            old_action_log_probs_batch.double())
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
                 action_loss = -torch.min(surr1, surr2).mean()

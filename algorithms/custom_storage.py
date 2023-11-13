@@ -233,9 +233,9 @@ class CustomOnlineStorage(object):
         #                                    latent_logvar=torch.stack(
         #                                        self.latent_logvar[:-1]) if self.latent_mean is not None else None)
         # might need to update this for combined policy /
-
+        ## strange  #torch.stack(self.latent[:-1]), gets odd dims with vectorised envs use torch.cat instead
         _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         torch.stack(self.latent[:-1]),
+                                                         torch.cat(self.latent[:-1]),
                                                          None,
                                                          None,
                                                          self.actions)
@@ -261,7 +261,8 @@ class CustomOnlineStorage(object):
             mini_batch_size,
             drop_last=True)
         for indices in sampler:
-            state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
+            # state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
+            state_batch = None # for RL2 don't pass state to policy as it goes through encoder
             cat_latent = torch.cat(self.latent[:-1])
             latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
             actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]
