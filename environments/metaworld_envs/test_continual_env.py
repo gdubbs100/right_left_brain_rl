@@ -1,11 +1,8 @@
-import torch
 import gym
 import numpy as np
 
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple
-
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class ContinualEnv(gym.Env):
     """
@@ -20,7 +17,6 @@ class ContinualEnv(gym.Env):
 
         self.action_space = envs[0].action_space
         self.observation_space = deepcopy(envs[0].observation_space)
-        # what is remove goal bounds? don't think need for meta-learning
 
         self.envs = envs
         self.num_envs = len(envs)
@@ -33,8 +29,6 @@ class ContinualEnv(gym.Env):
         return self.envs
 
     def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
-        # convert action to numpy
-        # action = action.cpu().detach().numpy()[0]
 
         # step
         obs, reward, terminated, truncated, info = self.envs[self.cur_seq_idx].step(action)
@@ -47,9 +41,8 @@ class ContinualEnv(gym.Env):
             info["TimeLimit.truncated"] = True
 
             self.cur_seq_idx += 1
-        ## convert data to torch and put to device
-        # obs = torch.from_numpy(np.append(obs, 0).reshape(1, -1)).float()#.to(device)
-        # reward = torch.from_numpy(np.array(reward).reshape(1, -1)).float()#.to(device)
+
+        ## add done flag
         to_append = 1 if done else 0
         obs = np.append(obs, to_append).reshape(1, -1)
 
@@ -57,6 +50,20 @@ class ContinualEnv(gym.Env):
 
     def reset(self) -> np.ndarray:
         obs, _ = self.envs[self.cur_seq_idx].reset()
-        # obs = torch.from_numpy(np.append(obs, 0).reshape(1, -1)).float()#.to(device)
+        # add done flag
         obs = np.append(obs, 0).reshape(1, -1)
         return obs
+    
+    def update_cur_step(self, value: int):
+        """
+        Manually update cur_step
+        Can help manage vec envs        
+        """
+        self.cur_step = value
+
+    def update_cur_seq_idx(self, value: int):
+        """
+        Manually update cur_seq_idx
+        Can help manage vec envs
+        """
+        self.cur_seq_idx = value

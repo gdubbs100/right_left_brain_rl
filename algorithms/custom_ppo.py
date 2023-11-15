@@ -10,14 +10,12 @@ from utils import custom_helpers as utl
 
 class CustomPPO:
     def __init__(self,
-                #  args,
                  actor_critic,
                  value_loss_coef,
                  entropy_coef,
                  policy_optimiser,
                  policy_anneal_lr,
                  train_steps,
-                #  optimiser_vae=None,
                  lr=None,
                  clip_param=0.2,
                  ppo_epoch=5,
@@ -28,8 +26,6 @@ class CustomPPO:
                  use_clipped_value_loss=True,
                  context_window = None
                  ):
-        # self.args = args
-
         # the model
         self.actor_critic = actor_critic
 
@@ -55,17 +51,13 @@ class CustomPPO:
         self.lr_scheduler_policy = None
         self.lr_scheduler_encoder = None
         if policy_anneal_lr:
-            lam = lambda f: 1 - f / train_steps
-            self.lr_scheduler_policy = optim.lr_scheduler.LambdaLR(self.optimiser, lr_lambda=lam)
-            if hasattr(self.args, 'rlloss_through_encoder') and self.args.rlloss_through_encoder:
-                self.lr_scheduler_encoder = optim.lr_scheduler.LambdaLR(self.optimiser_vae, lr_lambda=lam)
+            raise NotImplementedError
+            # lam = lambda f: 1 - f / train_steps
+            # self.lr_scheduler_policy = optim.lr_scheduler.LambdaLR(self.optimiser, lr_lambda=lam)
+            # if hasattr(self.args, 'rlloss_through_encoder') and self.args.rlloss_through_encoder:
+            #     self.lr_scheduler_encoder = optim.lr_scheduler.LambdaLR(self.optimiser_vae, lr_lambda=lam)
 
-    def update(self,
-               policy_storage,
-               encoder=None,  # variBAD encoder
-               rlloss_through_encoder=False,  # whether or not to backprop RL loss through encoder
-               compute_vae_loss=None  # function that can compute the VAE loss
-               ):
+    def update(self, policy_storage):
 
         # -- get action values --
         advantages = policy_storage.returns[:-1] - policy_storage.value_preds[:-1]
@@ -95,19 +87,8 @@ class CustomPPO:
                 state_batch, actions_batch, latent_batch, value_preds_batch, \
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
-                # if not rlloss_through_encoder:
-                # state_batch = state_batch.detach() # state batch is none because rl2
                 ## TODO: I think I should not detach this
                 latent_batch = latent_batch#.detach()
-                    # if latent_sample_batch is not None:
-                    #     latent_sample_batch = latent_sample_batch.detach()
-                    #     latent_mean_batch = latent_mean_batch.detach()
-                    #     latent_logvar_batch = latent_logvar_batch.detach()
-
-                # latent_batch = utl.get_latent_for_policy(args=self.args, latent_sample=latent_sample_batch,
-                #                                          latent_mean=latent_mean_batch,
-                #                                          latent_logvar=latent_logvar_batch
-                #                                          )
 
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy = \
@@ -140,48 +121,28 @@ class CustomPPO:
 
                 # zero out the gradients
                 self.optimiser.zero_grad()
-                # if rlloss_through_encoder:
-                #     self.optimiser_vae.zero_grad()
 
                 # compute policy loss and backprop
                 loss = value_loss * self.value_loss_coef + action_loss - dist_entropy * self.entropy_coef
-
-                # compute vae loss and backprop
-                # if rlloss_through_encoder:
-                #     loss += self.args.vae_loss_coeff * compute_vae_loss()
 
                 # compute gradients (will attach to all networks involved in this computation)
                 loss.backward()
 
                 # clip gradients
                 nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
-                # nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.args.policy_max_grad_norm)
-
-                # in oursetup loss is always through encoder
-                # if rlloss_through_encoder:
-                #     if self.args.encoder_max_grad_norm is not None:
-                #         nn.utils.clip_grad_norm_(encoder.parameters(), self.args.encoder_max_grad_norm)
 
                 # update
                 self.optimiser.step()
-                # if rlloss_through_encoder:
-                #     self.optimiser_vae.step()
 
                 value_loss_epoch += value_loss.item()
                 action_loss_epoch += action_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
                 loss_epoch += loss.item()
 
-                # if rlloss_through_encoder:
+
                 # recompute embeddings (to build computation graph) during updates
                 self._recompute_embeddings(policy_storage, sample=False, update_idx=e + 1,
                                              detach_every= self.context_window if self.context_window is not None else None)
-                # utl.recompute_embeddings(policy_storage, encoder, sample=False, update_idx=e + 1,
-                #                              detach_every= self.context_window if self.context_window is not None else None)
-
-        # if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
-        #     for _ in range(self.args.num_vae_updates):
-        #         compute_vae_loss(update=True)
 
         if self.lr_scheduler_policy is not None:
             self.lr_scheduler_policy.step()
@@ -197,8 +158,7 @@ class CustomPPO:
 
         return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch
 
-    # def act(self, actions, states, rewards, hidden_state, deterministic=False):
-    #     return self.actor_critic.act(actions, states, rewards, hidden_state, deterministic=False)
+
 
     def act(self, state, latent, belief, task, deterministic = False):
         return self.actor_critic.act(state, latent, belief, task, deterministic)
@@ -223,20 +183,16 @@ class CustomPPO:
                 return_prior=False,
                 detach_every=detach_every
             )
-            # latent_sample.append(ts)
+
             latent.append(torch.cat((tm, tl), dim = -1)[None,:])
-            # latent_mean.append(tm)
-            # latent_logvar.append(tl)
 
         if update_idx == 0:
             try:
                 assert (torch.cat(policy_storage.latent) - torch.cat(latent)).sum() == 0
-                # assert (torch.cat(policy_storage.latent_mean) - torch.cat(latent_mean)).sum() == 0
-                # assert (torch.cat(policy_storage.latent_logvar) - torch.cat(latent_logvar)).sum() == 0
+
             except AssertionError:
                 warnings.warn('You are not recomputing the embeddings correctly!')
-                # import pdb
-                # pdb.set_trace()
+
         
         policy_storage.latent = latent
 
