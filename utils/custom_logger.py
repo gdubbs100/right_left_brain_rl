@@ -33,3 +33,6 @@ class CustomLogger:
 
     def add(self, name, value, x_pos):
         self.writer.add_scalar(name, value, x_pos)
+
+    def add_multiple(self, name, value_dict, x_pos):
+        self.writer.add_scalars(name, value_dict, x_pos)

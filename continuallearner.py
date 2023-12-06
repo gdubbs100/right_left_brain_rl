@@ -11,7 +11,7 @@ from algorithms.custom_storage import CustomOnlineStorage
 # from models.policy import Policy
 # from utils import evaluation as utl_eval
 from utils import helpers as utl
-from utils.tb_logger import TBLogger
+from utils.custom_logger import CustomLogger
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -20,7 +20,7 @@ class ContinualLearner:
     """
     Continual learning class - handles training process for continual learning
     """
-    def __init__(self, seed, envs, agent, num_processes, rollout_len):
+    def __init__(self, seed, envs, agent, num_processes, rollout_len, logger):
 
         # self.args = args
         ## TODO: set a seed, look at below function
@@ -51,7 +51,7 @@ class ContinualLearner:
                 )
         
         ## TODO: add a logger
-        # self.logger = logger
+        self.logger = logger
 
         # # calculate number of updates and keep count of frames/iterations
         # self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
@@ -81,7 +81,8 @@ class ContinualLearner:
             step = 0
             obs = self.envs.reset()
             current_task = self.envs.get_env_attr("cur_seq_idx") # perhaps sort out dictionary mapping for name / task id
-            episode_reward = 0
+            # episode_reward = 0
+            episode_reward = []
             done = [False for _ in range(self.num_processes)]
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
@@ -100,8 +101,10 @@ class ContinualLearner:
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
                 obs = next_obs
-                episode_reward += reward.sum() / self.num_processes
 
+                ## TODO: review this
+                # episode_reward += #reward.sum() / self.num_processes
+                episode_reward.append(reward)
                 ## TODO: do I even need masks? - check how advantages are calculated
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
@@ -115,7 +118,7 @@ class ContinualLearner:
                     hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
 
                 _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
-                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]#.reshape(1, -1)
+                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
 
                 
                 self.storage.next_state[step] = obs.clone()
@@ -137,7 +140,25 @@ class ContinualLearner:
                 step += 1
 
             # TODO: convert to tensorboard
-            res[eps] = (*self.agent.update(self.storage), current_task, episode_reward.cpu().detach().numpy())
+            # res[eps] = (*self.agent.update(self.storage), current_task, episode_reward.cpu().detach().numpy())
+            ## Log loss
+            ## TODO: tidy into function
+            value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
+            self.logger.add('value_loss', value_loss_epoch, eps)
+            self.logger.add('action_loss', action_loss_epoch, eps)
+            self.logger.add('entropy_loss', dist_entropy_epoch, eps)
+            self.logger.add('total_loss', loss_epoch, eps)
+            self.logger.add('current_task', current_task, eps)
+
+            ## Log reward quantiles
+            ## TODO: tidy into function
+            quantiles = [0.05, 0.1, 0.2, 0.3, 0.5]
+            reward_quantiles = torch.quantile(torch.stack(episode_reward).cpu(), torch.tensor(quantiles))
+            quantile_dict = dict(zip(['q_' + str(q) for q in quantiles], reward_quantiles))
+            self.logger.add_multiple('reward_quantiles', quantile_dict, eps)
+
+            ## Log success
+            # self.logger.add('success', np.sum([i['success'] for i in info]), eps)
 
             # clears out old data
             self.storage.after_update()
@@ -147,7 +168,7 @@ class ContinualLearner:
         self.envs.close()
 
         ## TODO: replace this with tensorboard
-        return res
+        # return res
 
     # def log(self, run_stats, train_stats, start_time):
 
