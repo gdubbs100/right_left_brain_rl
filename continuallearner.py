@@ -12,6 +12,7 @@ from algorithms.custom_storage import CustomOnlineStorage
 # from utils import evaluation as utl_eval
 from utils import helpers as utl
 from utils.custom_logger import CustomLogger
+from environments.custom_env_utils import prepare_parallel_envs
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -20,15 +21,21 @@ class ContinualLearner:
     """
     Continual learning class - handles training process for continual learning
     """
-    def __init__(self, seed, envs, agent, num_processes, rollout_len, logger):
+    def __init__(self, seed, envs, agent, num_processes, rollout_len, steps_per_env, logger):
 
         # self.args = args
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
 
         ## initialise the envs
+        ## TODO: initialise envs in he init
         self.envs = envs
-
+        self.envs = prepare_parallel_envs(
+            envs,
+            steps_per_env,
+            num_processes,
+            device
+        )
 
         # set params for runs
         self.num_processes = num_processes
@@ -79,7 +86,7 @@ class ContinualLearner:
         while self.envs.get_env_attr('cur_step') < self.envs.get_env_attr('steps_limit'):
 
             step = 0
-            obs = self.envs.reset()
+            obs = self.envs.reset() # we reset all at once as metaworld is time limited
             current_task = self.envs.get_env_attr("cur_seq_idx") # perhaps sort out dictionary mapping for name / task id
             # episode_reward = 0
             episode_reward = []
@@ -169,6 +176,88 @@ class ContinualLearner:
 
         ## TODO: replace this with tensorboard
         # return res
+
+    def evaluate(self, current_task, test_processes = 10):
+
+        ## TODO: 
+        ## need to consider how to log these
+        ## want each task to have its own line
+        ## would like each task to have proportion of successes, some reward metric
+        ## may not log all metrics in tensorflow
+        ## log at episode level but also get tasks to share a plot
+
+        ## TODO: create vectorised envs
+        ## num runs given by test_processes
+        test_envs = prepare_parallel_envs(
+            self.envs, 
+            self.rollout_len,
+            test_processes, 
+            device
+        )
+        start_time = time.time() # use this in logger?
+        eps = 0
+
+        # steps limit is parameter for whole continual env
+        while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
+
+            step = 0
+            obs = test_envs.reset() # we reset all at once as metaworld is time limited
+            episode_reward = []
+            successes = []
+            done = [False for _ in range(test_processes)]
+
+            ## TODO: determine how frequently to get prior - do at start of each episode for now
+            with torch.no_grad():
+                _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(test_processes)
+                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+
+
+            while not all(done):
+                with torch.no_grad():
+                    _, action = self.agent.act(obs, latent, None, None)
+                next_obs, reward, done, info = test_envs.step(action)
+                assert all(done) == any(done), "Metaworld envs should all end simultaneously"
+
+                obs = next_obs
+
+                ## combine all rewards
+                episode_reward.append(reward)
+                # if we succeed at all then the task is successful
+                successes.append(torch.tensor([i['success'] for i in info]))
+
+                # ## TODO: Don't think I need this for eval
+                # # create mask for episode ends
+                # masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
+                # # reset hidden state if done
+                # if all(done):
+                #     with torch.no_grad():
+                #         hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
+
+                with torch.no_grad():
+                    _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
+                    latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+
+                step += 1
+
+            ## log the results here
+            ## current task
+            self.logger.add('current_task', current_task, eps)
+            ## TODO: tidy into function
+            quantiles = [0.05, 0.1, 0.2, 0.3, 0.5]
+            reward_quantiles = torch.quantile(torch.stack(episode_reward).cpu(), torch.tensor(quantiles))
+            quantile_dict = dict(zip(['q_' + str(q) for q in quantiles], reward_quantiles))
+            self.logger.add_multiple('reward_quantiles', quantile_dict, eps)
+
+            ## Log success - if success then 1 divided by number of envs ()
+            stacked_successes = torch.stack(successes).max(0)[0].sum() / test_processes
+            self.logger.add('success', stacked_successes, eps)
+
+            eps+=1
+        end_time = time.time()
+        print(f"eval completed in {end_time - start_time}")
+        test_envs.close()
+
+
 
     # def log(self, run_stats, train_stats, start_time):
 
