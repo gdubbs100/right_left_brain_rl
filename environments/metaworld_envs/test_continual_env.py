@@ -27,6 +27,9 @@ class ContinualEnv(gym.Env):
 
     def _get_envs(self):
         return self.envs
+    
+    def _get_env_ids(self):
+        return [i for i in len(self.envs)]
 
     def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
 
@@ -54,16 +57,16 @@ class ContinualEnv(gym.Env):
         obs = np.append(obs, 0).reshape(1, -1)
         return obs
     
-    def update_cur_step(self, value: int):
-        """
-        Manually update cur_step
-        Can help manage vec envs        
-        """
-        self.cur_step = value
+    # def update_cur_step(self, value: int):
+    #     """
+    #     Manually update cur_step
+    #     Can help manage vec envs        
+    #     """
+    #     self.cur_step = value
 
-    def update_cur_seq_idx(self, value: int):
-        """
-        Manually update cur_seq_idx
-        Can help manage vec envs
-        """
-        self.cur_seq_idx = value
+    # def update_cur_seq_idx(self, value: int):
+    #     """
+    #     Manually update cur_seq_idx
+    #     Can help manage vec envs
+    #     """
+    #     self.cur_seq_idx = value
