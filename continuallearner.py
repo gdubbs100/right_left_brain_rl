@@ -21,15 +21,27 @@ class ContinualLearner:
     """
     Continual learning class - handles training process for continual learning
     """
-    def __init__(self, seed, envs, agent, num_processes, rollout_len, steps_per_env, logger, log_every = 10):
+    def __init__(
+            self, 
+            seed, 
+            envs, 
+            agent, 
+            num_processes, 
+            rollout_len, 
+            steps_per_env, 
+            # logger, 
+            log_dir, 
+            scenario_name, 
+            log_every = 10,
+            quantiles = [i/10 for i in range(1, 10)]):
 
         # self.args = args
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
 
         ## initialise the envs
-        ## TODO: initialise envs in he init
         self.raw_envs = envs
+        self.task_names = [env.name for env in self.raw_envs]
         self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_envs)}
         self.envs = prepare_parallel_envs(
             self.raw_envs,
@@ -58,8 +70,11 @@ class ContinualLearner:
                     False # what's this?
                 )
         
-        ## TODO: add a logger
-        self.logger = logger
+        ## TODO: think about how to log all args - am I going to need to pass the args into the trainer, into the logger? urgh
+        self.quantiles = quantiles
+        self.log_dir = log_dir
+        self.scenario_name = scenario_name
+        self.logger = CustomLogger(self.log_dir, self.scenario_name, self.quantiles)
         self.log_every = log_every
 
         # # calculate number of updates and keep count of frames/iterations
@@ -67,8 +82,6 @@ class ContinualLearner:
         # self.frames = 0
         # self.iter_idx = -1
 
-        # # initialise tensorboard logger
-        # # self.logger = TBLogger(self.args, self.args.exp_label)
 
     def train(self):
         """ Main Training loop """
@@ -80,8 +93,6 @@ class ContinualLearner:
         #     steps_per_env - num_processes * rollout_len >= 0
         # )
         
-        ## TODO: replace res with tensorboard
-        res = dict()
         eps = 0
 
         # steps limit is parameter for whole continual env
@@ -148,75 +159,53 @@ class ContinualLearner:
 
                 step += 1
 
-            # TODO: convert to tensorboard
-            # res[eps] = (*self.agent.update(self.storage), current_task, episode_reward.cpu().detach().numpy())
-            ## Log loss
-            ## TODO: tidy into function
+            ## Log training loss
             value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
-            self.logger.add('value_loss', value_loss_epoch, eps)
-            self.logger.add('action_loss', action_loss_epoch, eps)
-            self.logger.add('entropy_loss', dist_entropy_epoch, eps)
-            self.logger.add('total_loss', loss_epoch, eps)
-            self.logger.add('current_task', current_task, eps)
-
-            ## Log reward quantiles
-            ## TODO: tidy into function
-            # quantiles = [0.05, 0.1, 0.2, 0.3, 0.5]
-            # reward_quantiles = torch.quantile(torch.stack(episode_reward).cpu(), torch.tensor(quantiles))
-            # quantile_dict = dict(zip(['q_' + str(q) for q in quantiles], reward_quantiles))
-            # self.logger.add_multiple('reward_quantiles', quantile_dict, eps)
-
-            ## Log success
-            # self.logger.add('success', np.sum([i['success'] for i in info]), eps)
+            self.logger.add_tensorboard('value_loss', value_loss_epoch, eps)
+            self.logger.add_tensorboard('action_loss', action_loss_epoch, eps)
+            self.logger.add_tensorboard('entropy_loss', dist_entropy_epoch, eps)
+            self.logger.add_tensorboard('total_loss', loss_epoch, eps)
+            self.logger.add_tensorboard('current_task', current_task, eps)
 
             # clears out old data
             self.storage.after_update()
 
-            if eps % self.log_every == 0:
+            if (eps+1) % self.log_every == 0:
                 print(f"Evaluating at Episode: {eps}")
                 self.evaluate(current_task, eps)
-                ## TODO: add eval/logging fuction here
-                pass
+
+                ## TODO: save out network
+                # torch.save(self.agent.actor_critic, os.path.join(self.log_dir, f"{self.scenario_name}/actor_critic.pt")
+                self.logger.save_network(self.agent.actor_critic)
+
             eps+=1
         end_time = time.time()
         print(f"completed in {end_time - start_time}")
         self.envs.close()
 
-        ## TODO: replace this with tensorboard
-        # return res
-
     def evaluate(self, current_task, eps, test_processes = 10):
-
-        ## TODO: 
-        ## need to consider how to log these
-        ## want each task to have its own line
-        ## would like each task to have proportion of successes, some reward metric
-        ## may not log all metrics in tensorflow
-        ## log at episode level but also get tasks to share a plot
-
-        ## TODO: create vectorised envs
+        start_time = time.time() # use this in logger?
+        current_task_name = self.env_id_to_name[current_task]
+        
         ## num runs given by test_processes
-        # print(self.envs, self.rollout_len, test_processes, device)
         test_envs = prepare_parallel_envs(
             self.raw_envs, 
             self.rollout_len,
             test_processes, 
             device
         )
-        start_time = time.time() # use this in logger?
-        # eps = 0
+
+        # record outputs
         task_rewards = {
-            env.name: [] for env in self.raw_envs
+            task_name: [] for task_name in self.task_names
         }
 
         task_successes = {
-            env.name: [] for env in self.raw_envs
+            task_name: [] for task_name in self.task_names
         }
 
-        # steps limit is parameter for whole continual env
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
 
-            # step = 0
             obs = test_envs.reset() # we reset all at once as metaworld is time limited
             episode_reward = []
             successes = []
@@ -241,68 +230,41 @@ class ContinualLearner:
                 # if we succeed at all then the task is successful
                 successes.append(torch.tensor([i['success'] for i in info]))
 
-                # ## TODO: Don't think I need this for eval
-                # # create mask for episode ends
-                # masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
-                # # reset hidden state if done
-                # if all(done):
-                #     with torch.no_grad():
-                #         hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
-
                 with torch.no_grad():
                     _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
                     latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
 
-                # step += 1
-
             ## log the results here
-            ## current task
-            
-
-
             task_rewards[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(episode_reward).cpu()
             task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(successes).max(0)[0].sum() / test_processes
-            ## TODO: tidy into function
-            # quantiles = [0.05, 0.1, 0.2, 0.3, 0.5]
-            # reward_quantiles = torch.quantile(torch.stack(episode_reward).cpu(), torch.tensor(quantiles))
-            # quantile_dict = dict(zip(['q_' + str(q) for q in quantiles], reward_quantiles))
-            # self.logger.add_multiple('reward_quantiles', quantile_dict, eps)
 
-            # ## Log success - if success then 1 divided by number of envs ()
-            # stacked_successes = torch.stack(successes).max(0)[0].sum() / test_processes
-            # self.logger.add('success', stacked_successes, eps)
-
-            # eps+=1
         end_time = time.time()
-        self.logger.add('current_task', current_task, eps)
+        self.logger.add_tensorboard('current_task', current_task, eps)
 
-        ## TODO: log rewards, successes to tensorboard
-        self.logger.add_multiple('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
-        self.logger.add_multiple('task_successes', task_successes, eps)
+        #log rewards, successes to tensorboard
+        ## TODO: is there a neater way? e.g. log each of these under the same board
+        self.logger.add_multiple_tensorboard('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
+        self.logger.add_multiple_tensorboard('task_successes', task_successes, eps)
 
-        ## TODO: log reward quantiles, successes to csv
+        # log reward quantiles, successes to csv
+        # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
+        for task in self.task_names:
+            ## TODO: perhaps move quantiles and logger creation into continual learner init
+            reward_quantiles = torch.quantile(
+                task_rewards[task],
+                torch.tensor(self.quantiles)
+            ).numpy().tolist()
 
-        ### something like this:
-        # training_task = 'task1'
-        # tasks = ['task1', 'task2']
-        # quantiles = [0.05,0.5, 0.95]
-        # reward_dict = {'task1': torch.tensor([1.,2.,3.,4.,5.]), 'task2': torch.tensor([1.,5.,6.,9.,3.])}
-        # success_dict = {'task1': 0.5, 'task2': 0.1}
-
-        # to_write = []
-        # for task in tasks:
-        #     reward_quantiles = torch.quantile(reward_dict[task], torch.tensor(quantiles)).numpy().tolist()
-        #     successes = success_dict[task]
-        #     to_write.append((task, *reward_quantiles, successes))
-        ## then write with open('blah.csv') as f ...
-
-        # quantiles = [0.05, 0.1, 0.2, 0.3, 0.5]
-        # reward_quantiles = torch.quantile(torch.stack(episode_reward).cpu(), torch.tensor(quantiles))
-        # quantile_dict = dict(zip(['q_' + str(q) for q in quantiles], reward_quantiles))
-        # self.logger.add_multiple('reward_quantiles', quantile_dict, eps)
-
-
-
+            to_write = (
+                current_task_name,
+                task,
+                task_successes[task].numpy(),
+                task_rewards[task].mean().numpy(),
+                *reward_quantiles,
+                eps
+            )
+            self.logger.add_csv(to_write)
+        
         print(f"eval completed in {end_time - start_time}")
         test_envs.close()
 
