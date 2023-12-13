@@ -28,7 +28,7 @@ class CustomLogger:
             os.makedirs(self.log_dir)
 
         self.logging_quantiles = logging_quantiles
-        self.result_log_headers = ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
+        self.result_log_headers = ['training_task', 'evaluation_task', 'num_successes', 'num_episodes', 'reward_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
         with open(self.csv_dir, 'w') as f:
             csv_writer = csv.writer(f, delimiter=',')
             csv_writer.writerow(

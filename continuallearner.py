@@ -174,8 +174,7 @@ class ContinualLearner:
                 print(f"Evaluating at Episode: {eps}")
                 self.evaluate(current_task, eps)
 
-                ## TODO: save out network
-                # torch.save(self.agent.actor_critic, os.path.join(self.log_dir, f"{self.scenario_name}/actor_critic.pt")
+                ## save the network
                 self.logger.save_network(self.agent.actor_critic)
 
             eps+=1
@@ -185,7 +184,7 @@ class ContinualLearner:
 
     def evaluate(self, current_task, eps, test_processes = 10):
         start_time = time.time() # use this in logger?
-        current_task_name = self.env_id_to_name[current_task]
+        current_task_name = self.env_id_to_name[current_task + 1]
         
         ## num runs given by test_processes
         test_envs = prepare_parallel_envs(
@@ -236,7 +235,7 @@ class ContinualLearner:
 
             ## log the results here
             task_rewards[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(successes).max(0)[0].sum() / test_processes
+            task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
 
         end_time = time.time()
         self.logger.add_tensorboard('current_task', current_task, eps)
@@ -259,6 +258,7 @@ class ContinualLearner:
                 current_task_name,
                 task,
                 task_successes[task].numpy(),
+                test_processes, # record number of eval tasks per env
                 task_rewards[task].mean().numpy(),
                 *reward_quantiles,
                 eps
