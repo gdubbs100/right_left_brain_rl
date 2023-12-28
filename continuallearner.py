@@ -12,7 +12,7 @@ from algorithms.custom_storage import CustomOnlineStorage
 # from utils import evaluation as utl_eval
 from utils import helpers as utl
 from utils.custom_logger import CustomLogger
-from environments.custom_env_utils import prepare_parallel_envs
+from environments.custom_env_utils import prepare_parallel_envs, prepare_base_envs
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -24,24 +24,25 @@ class ContinualLearner:
     def __init__(
             self, 
             seed, 
-            envs, 
+            # envs, 
+            task_names,
             agent, 
             num_processes, 
             rollout_len, 
             steps_per_env, 
-            # logger, 
             log_dir, 
             scenario_name, 
             log_every = 10,
-            quantiles = [i/10 for i in range(1, 10)]):
+            quantiles = [i/10 for i in range(1, 10)],
+            randomization = 'random_init_fixed20'):
 
         # self.args = args
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
 
         ## initialise the envs
-        self.raw_envs = envs
-        self.task_names = [env.name for env in self.raw_envs]
+        self.raw_envs = prepare_base_envs(task_names, randomization)
+        self.task_names = task_names#[env.name for env in self.raw_envs]
         self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_envs)}
         self.envs = prepare_parallel_envs(
             self.raw_envs,
@@ -70,7 +71,8 @@ class ContinualLearner:
                     False # what's this?
                 )
         
-        ## TODO: think about how to log all args - am I going to need to pass the args into the trainer, into the logger? urgh
+        ## TODO: think about how to log all args - 
+        # am I going to need to pass the args into the trainer, into the logger? urgh
         self.quantiles = quantiles
         self.log_dir = log_dir
         self.scenario_name = scenario_name
@@ -101,7 +103,6 @@ class ContinualLearner:
             step = 0
             obs = self.envs.reset() # we reset all at once as metaworld is time limited
             current_task = self.envs.get_env_attr("cur_seq_idx") # perhaps sort out dictionary mapping for name / task id
-            # episode_reward = 0
             episode_reward = []
             done = [False for _ in range(self.num_processes)]
 
@@ -248,7 +249,6 @@ class ContinualLearner:
         # log reward quantiles, successes to csv
         # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
         for task in self.task_names:
-            ## TODO: perhaps move quantiles and logger creation into continual learner init
             reward_quantiles = torch.quantile(
                 task_rewards[task],
                 torch.tensor(self.quantiles)
@@ -267,128 +267,3 @@ class ContinualLearner:
         
         print(f"eval completed in {end_time - start_time}")
         test_envs.close()
-
-
-
-    # def log(self, run_stats, train_stats, start_time):
-
-    #     # --- visualise behaviour of policy ---
-
-    #     if (self.iter_idx + 1) % self.args.vis_interval == 0:
-    #         ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
-    #         utl_eval.visualise_behaviour(args=self.args,
-    #                                      policy=self.policy,
-    #                                      image_folder=self.logger.full_output_folder,
-    #                                      iter_idx=self.iter_idx,
-    #                                      ret_rms=ret_rms,
-    #                                      encoder=self.vae.encoder,
-    #                                      reward_decoder=self.vae.reward_decoder,
-    #                                      state_decoder=self.vae.state_decoder,
-    #                                      task_decoder=self.vae.task_decoder,
-    #                                      compute_rew_reconstruction_loss=self.vae.compute_rew_reconstruction_loss,
-    #                                      compute_state_reconstruction_loss=self.vae.compute_state_reconstruction_loss,
-    #                                      compute_task_reconstruction_loss=self.vae.compute_task_reconstruction_loss,
-    #                                      compute_kl_loss=self.vae.compute_kl_loss,
-    #                                      tasks=self.train_tasks,
-    #                                      )
-
-    #     # --- evaluate policy ----
-
-    #     if (self.iter_idx + 1) % self.args.eval_interval == 0:
-
-    #         ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
-    #         returns_per_episode = utl_eval.evaluate(args=self.args,
-    #                                                 policy=self.policy,
-    #                                                 ret_rms=ret_rms,
-    #                                                 encoder=self.vae.encoder,
-    #                                                 iter_idx=self.iter_idx,
-    #                                                 tasks=self.train_tasks,
-    #                                                 )
-
-    #         # log the return avg/std across tasks (=processes)
-    #         returns_avg = returns_per_episode.mean(dim=0)
-    #         returns_std = returns_per_episode.std(dim=0)
-    #         for k in range(len(returns_avg)):
-    #             self.logger.add('return_avg_per_iter/episode_{}'.format(k + 1), returns_avg[k], self.iter_idx)
-    #             self.logger.add('return_avg_per_frame/episode_{}'.format(k + 1), returns_avg[k], self.frames)
-    #             self.logger.add('return_std_per_iter/episode_{}'.format(k + 1), returns_std[k], self.iter_idx)
-    #             self.logger.add('return_std_per_frame/episode_{}'.format(k + 1), returns_std[k], self.frames)
-
-    #         print(f"Updates {self.iter_idx}, "
-    #               f"Frames {self.frames}, "
-    #               f"FPS {int(self.frames / (time.time() - start_time))}, "
-    #               f"\n Mean return (train): {returns_avg[-1].item()} \n"
-    #               )
-
-    #     # --- save models ---
-
-    #     if (self.iter_idx + 1) % self.args.save_interval == 0:
-    #         save_path = os.path.join(self.logger.full_output_folder, 'models')
-    #         if not os.path.exists(save_path):
-    #             os.mkdir(save_path)
-
-    #         idx_labels = ['']
-    #         if self.args.save_intermediate_models:
-    #             idx_labels.append(int(self.iter_idx))
-
-    #         for idx_label in idx_labels:
-
-    #             torch.save(self.policy.actor_critic, os.path.join(save_path, f"policy{idx_label}.pt"))
-    #             torch.save(self.vae.encoder, os.path.join(save_path, f"encoder{idx_label}.pt"))
-    #             if self.vae.state_decoder is not None:
-    #                 torch.save(self.vae.state_decoder, os.path.join(save_path, f"state_decoder{idx_label}.pt"))
-    #             if self.vae.reward_decoder is not None:
-    #                 torch.save(self.vae.reward_decoder, os.path.join(save_path, f"reward_decoder{idx_label}.pt"))
-    #             if self.vae.task_decoder is not None:
-    #                 torch.save(self.vae.task_decoder, os.path.join(save_path, f"task_decoder{idx_label}.pt"))
-
-    #             # save normalisation params of envs
-    #             if self.args.norm_rew_for_policy:
-    #                 rew_rms = self.envs.venv.ret_rms
-    #                 utl.save_obj(rew_rms, save_path, f"env_rew_rms{idx_label}")
-    #             # TODO: grab from policy and save?
-    #             # if self.args.norm_obs_for_policy:
-    #             #     obs_rms = self.envs.venv.obs_rms
-    #             #     utl.save_obj(obs_rms, save_path, f"env_obs_rms{idx_label}")
-
-    #     # --- log some other things ---
-
-    #     if ((self.iter_idx + 1) % self.args.log_interval == 0) and (train_stats is not None):
-
-    #         self.logger.add('environment/state_max', self.policy_storage.prev_state.max(), self.iter_idx)
-    #         self.logger.add('environment/state_min', self.policy_storage.prev_state.min(), self.iter_idx)
-
-    #         self.logger.add('environment/rew_max', self.policy_storage.rewards_raw.max(), self.iter_idx)
-    #         self.logger.add('environment/rew_min', self.policy_storage.rewards_raw.min(), self.iter_idx)
-
-    #         self.logger.add('policy_losses/value_loss', train_stats[0], self.iter_idx)
-    #         self.logger.add('policy_losses/action_loss', train_stats[1], self.iter_idx)
-    #         self.logger.add('policy_losses/dist_entropy', train_stats[2], self.iter_idx)
-    #         self.logger.add('policy_losses/sum', train_stats[3], self.iter_idx)
-
-    #         self.logger.add('policy/action', run_stats[0][0].float().mean(), self.iter_idx)
-    #         if hasattr(self.policy.actor_critic, 'logstd'):
-    #             self.logger.add('policy/action_logstd', self.policy.actor_critic.dist.logstd.mean(), self.iter_idx)
-    #         self.logger.add('policy/action_logprob', run_stats[1].mean(), self.iter_idx)
-    #         self.logger.add('policy/value', run_stats[2].mean(), self.iter_idx)
-
-    #         self.logger.add('encoder/latent_mean', torch.cat(self.policy_storage.latent_mean).mean(), self.iter_idx)
-    #         self.logger.add('encoder/latent_logvar', torch.cat(self.policy_storage.latent_logvar).mean(), self.iter_idx)
-
-    #         # log the average weights and gradients of all models (where applicable)
-    #         for [model, name] in [
-    #             [self.policy.actor_critic, 'policy'],
-    #             [self.vae.encoder, 'encoder'],
-    #             [self.vae.reward_decoder, 'reward_decoder'],
-    #             [self.vae.state_decoder, 'state_transition_decoder'],
-    #             [self.vae.task_decoder, 'task_decoder']
-    #         ]:
-    #             if model is not None:
-    #                 param_list = list(model.parameters())
-    #                 param_mean = np.mean([param_list[i].data.cpu().numpy().mean() for i in range(len(param_list))])
-    #                 self.logger.add('weights/{}'.format(name), param_mean, self.iter_idx)
-    #                 if name == 'policy':
-    #                     self.logger.add('weights/policy_std', param_list[0].data.mean(), self.iter_idx)
-    #                 if param_list[0].grad is not None:
-    #                     param_grad_mean = np.mean([param_list[i].grad.cpu().numpy().mean() for i in range(len(param_list))])
-    #                     self.logger.add('gradients/{}'.format(name), param_grad_mean, self.iter_idx)

@@ -1,3 +1,9 @@
+import metaworld
+
+# create MT50 benchmark to extract envs
+MT50 = metaworld.MT50()
+
+## list of tasks for Continual World
 TASK_SEQS = {
     "CW10": [
         "hammer-v2",

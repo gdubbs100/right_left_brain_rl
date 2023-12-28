@@ -1,3 +1,5 @@
+import torch.nn as nn
+
 class ActorCritic(nn.Module):
 
     def __init__(self, policy, encoder):

@@ -4,15 +4,31 @@ Based on https://github.com/ikostrikov/pytorch-a2c-ppo-acktr
 import gym
 import torch
 
+from continualworld_utils.wrappers import RandomizationWrapper
+from continualworld_utils.utils import get_subtasks
+from continualworld_utils.constants import MT50
 from environments.env_utils.vec_env import VecEnvWrapper
 from environments.env_utils.vec_env.subproc_vec_env import SubprocVecEnv
+
 
 def make_continual_env(env_id, **kwargs):
     def _thunk():
         env = gym.make(env_id, **kwargs)
-        ## TODO: may need to add wrappers here?
         return env
     return _thunk
+
+def prepare_base_envs(task_names, randomization="random_init_fixed20"):
+    """
+    task_names: list of task names from MT50
+    randomization: string to pass to randomization_wrapper
+    """
+    envs = []
+    for task_name in task_names:
+        env = MT50.train_classes[task_name]()
+        env = RandomizationWrapper(env, get_subtasks(task_name), randomization)
+        env.name = task_name
+        envs.append(env)
+    return envs
 
 def prepare_parallel_envs(envs, steps_per_env, num_processes, device):
     subproc_envs = SubprocVecEnv(
