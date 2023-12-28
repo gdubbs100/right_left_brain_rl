@@ -15,7 +15,10 @@ from utils.custom_logger import CustomLogger
 from environments.custom_env_utils import prepare_parallel_envs, prepare_base_envs
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+## TODO:
+# 1. make sure that you can handle the repeated tasks of CW20
+# 2. fix up metaworld envs so there is no overlap in traning/test tasks
+# 3. create continual learner 'main.py' function that runs with argparse so you can run on MASSIVE
 
 class ContinualLearner:
     """
