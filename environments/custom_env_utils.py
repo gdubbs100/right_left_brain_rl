@@ -17,15 +17,23 @@ def make_continual_env(env_id, **kwargs):
         return env
     return _thunk
 
-def prepare_base_envs(task_names, randomization="random_init_fixed20"):
+def prepare_base_envs(task_names, benchmark = MT50, task_set = 'train', randomization="random_init_fixed20"):
     """
-    task_names: list of task names from MT50
+    task_names: list of task names from metworld benchmark
+    benchmark: a set of metaworld benchmark tasks (default is MT50)
     randomization: string to pass to randomization_wrapper
     """
     envs = []
     for task_name in task_names:
-        env = MT50.train_classes[task_name]()
-        env = RandomizationWrapper(env, get_subtasks(task_name), randomization)
+        
+        if task_set=='train':
+            env = benchmark.train_classes[task_name]()
+        elif task_set=='test':
+            env=benchmark.test_classes[task_name]()
+        else:
+            raise ValueError('task_set must be one of test or train')
+
+        env = RandomizationWrapper(env, get_subtasks(task_name, benchmark, task_set), randomization)
         env.name = task_name
         envs.append(env)
     return envs
