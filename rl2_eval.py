@@ -20,7 +20,7 @@ def main():
 
     run_folder = args.run_folder
     log_folder = args.log_folder + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
-    num_eval_rounds = args.num_eval_rounds
+    num_eval_rounds = int(args.num_eval_rounds)
 
     ## create the log folder if it doesn't
     if not os.path.exists(log_folder):
