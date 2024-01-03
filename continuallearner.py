@@ -27,7 +27,6 @@ class ContinualLearner:
     def __init__(
             self, 
             seed, 
-            # envs, 
             task_names,
             agent, 
             num_processes, 
@@ -44,15 +43,18 @@ class ContinualLearner:
         utl.seed(seed, False)
 
         ## initialise the envs
-        self.raw_envs = prepare_base_envs(task_names, randomization)
-        self.task_names = task_names#[env.name for env in self.raw_envs]
-        self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_envs)}
+        self.raw_train_envs = prepare_base_envs(task_names, randomization=randomization)
+        self.task_names = np.unique(task_names)
+        self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_train_envs)}
         self.envs = prepare_parallel_envs(
-            self.raw_envs,
+            self.raw_train_envs,
             steps_per_env,
             num_processes,
             device
         )
+
+        # only eval on unique envs
+        self.raw_test_envs = prepare_base_envs(self.task_names, randomization=randomization)
 
         # set params for runs
         self.num_processes = num_processes
@@ -146,6 +148,8 @@ class ContinualLearner:
 
                 
                 self.storage.next_state[step] = obs.clone()
+                ## TODO: need to figure out how to include gating values
+                ## TODO: need to figure out how to include task for EWC
                 self.storage.insert(
                     state=obs.squeeze(),
                     belief=None, # could I get rid of belief?
@@ -192,7 +196,7 @@ class ContinualLearner:
         
         ## num runs given by test_processes
         test_envs = prepare_parallel_envs(
-            self.raw_envs, 
+            self.raw_test_envs, 
             self.rollout_len,
             test_processes, 
             device
@@ -238,8 +242,9 @@ class ContinualLearner:
                     latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
 
             ## log the results here
-            task_rewards[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
+            ## TODO: should we have test_envs.get_env_attr('cur_seq_idx') + 1?
+            task_rewards[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')+1]] = torch.stack(episode_reward).cpu()
+            task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')+1]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
 
         end_time = time.time()
         self.logger.add_tensorboard('current_task', current_task, eps)
