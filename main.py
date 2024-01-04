@@ -10,7 +10,7 @@ import torch
 
 # get configs
 from config.metaworld_config import \
-    args_ML10_rl2
+    args_ML10_rl2, args_CustomML10_rl2
 from config.gridworld import \
     args_grid_belief_oracle, args_grid_rl2, args_grid_varibad
 from config.pointrobot import \
@@ -38,6 +38,8 @@ def main():
     # --- MetaWorld ---
     if env == 'ML10_rl2':
         args = args_ML10_rl2.get_args(rest_args)
+    elif env == 'CustomML10_rl2':
+        args = args_CustomML10_rl2.get_args(rest_args)
     else:
         raise Exception("Invalid Environment")
 

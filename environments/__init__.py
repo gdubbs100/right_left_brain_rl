@@ -108,7 +108,13 @@ register(
 register(
     'ML10-v2',
     entry_point='environments.metaworld_envs.custom_varibad_env:ML10Env',
-    max_episode_steps=500,
+    max_episode_steps=500
+)
+
+register(
+    'CustomML10-v2',
+    entry_point='environments.metaworld_envs.custom_varibad_env:CustomML10Env',
+    max_episode_steps=500
 )
 
 register(
