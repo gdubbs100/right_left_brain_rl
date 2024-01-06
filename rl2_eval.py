@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--run_folder')
     parser.add_argument('--log_folder',default='./logs/rl2_eval')
     parser.add_argument('--num_eval_rounds', default=16)
+    parser.add_argument('--num_sequential_rounds', default=1)
     parser.add_argument('--benchmark', default='custom')
 
     args, rest_args = parser.parse_known_args()
@@ -24,6 +25,7 @@ def main():
     run_folder = args.run_folder
     log_folder = args.log_folder + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
     num_eval_rounds = int(args.num_eval_rounds)
+    num_sequential_rounds = int(args.num_sequential_rounds)
     eval_benchmark = args.benchmark
 
     ## create the log folder if it doesn't
@@ -55,8 +57,8 @@ def main():
     test_tasks = list(benchmark.test_classes.keys())
 
     # run the evaluation
-    train_results = eval_rl2(agent, train_tasks, benchmark, 'train', num_eval_rounds)
-    test_results = eval_rl2(agent, test_tasks, benchmark, 'test', num_eval_rounds)
+    train_results = eval_rl2(agent, train_tasks, benchmark, 'train', num_eval_rounds, num_sequential_rounds)
+    test_results = eval_rl2(agent, test_tasks, benchmark, 'test', num_eval_rounds, num_sequential_rounds)
 
     # save the results
     train_results.to_csv(log_folder + '/train_results.csv')

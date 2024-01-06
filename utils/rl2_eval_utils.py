@@ -16,11 +16,11 @@ class rl2_agent:
         return self.actor_critic.act(obs, latent, task, belief)
     
 
-def eval_rl2(agent, tasks, benchmark, task_set, num_eval):
+def eval_rl2(agent, tasks, benchmark, task_set, num_eval, num_sequential_rounds):
     raw_envs = prepare_base_envs(tasks, benchmark, task_set)
     envs = prepare_parallel_envs(
         raw_envs,
-        500, 
+        500*num_sequential_rounds, 
         num_eval,
         device
     )
@@ -31,6 +31,10 @@ def eval_rl2(agent, tasks, benchmark, task_set, num_eval):
             'successes' :0
         } for task in tasks
     }
+    with torch.no_grad():
+        _, latent_mean, latent_logvar, hidden_state = agent.actor_critic.encoder.prior(num_eval)
+        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+        
     while envs.get_env_attr('cur_step') < envs.get_env_attr('steps_limit'):
 
         obs = envs.reset() # we reset all at once as metaworld is time limited
@@ -40,9 +44,9 @@ def eval_rl2(agent, tasks, benchmark, task_set, num_eval):
         done = [False for _ in range(num_eval)]
 
         ## TODO: determine how frequently to get prior - do at start of each episode for now
-        with torch.no_grad():
-            _, latent_mean, latent_logvar, hidden_state = agent.actor_critic.encoder.prior(num_eval)
-            latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+        # with torch.no_grad():
+        #     _, latent_mean, latent_logvar, hidden_state = agent.actor_critic.encoder.prior(num_eval)
+        #     latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
 
 
         while not all(done):
