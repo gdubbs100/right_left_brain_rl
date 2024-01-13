@@ -4,6 +4,7 @@ Takes a flag --env-type (see below for choices) and loads the parameters from th
 """
 import argparse
 import warnings
+import json
 
 import numpy as np
 import torch
@@ -31,19 +32,36 @@ from metalearner import MetaLearner
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--load_model_from_checkpoint', default = None)
     parser.add_argument('--env-type', default='gridworld_varibad')
     args, rest_args = parser.parse_known_args()
-    env = args.env_type
+    # save for later
+    load_model_from_checkpoint = args.load_model_from_checkpoint
+    # print(args, rest_args)
 
-    # --- MetaWorld ---
-    if env == 'ML10_rl2':
-        args = args_ML10_rl2.get_args(rest_args)
-        assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
-    elif env == 'CustomML10_rl2':
-        args = args_CustomML10_rl2.get_args(rest_args)
-        assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
+    if args.load_model_from_checkpoint is None:
+        env = args.env_type
+
+        # --- MetaWorld ---
+        if env == 'ML10_rl2':
+            args = args_ML10_rl2.get_args(rest_args)
+            assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
+        elif env == 'CustomML10_rl2':
+            args = args_CustomML10_rl2.get_args(rest_args)
+            assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
+        else:
+            raise Exception("Invalid Environment")
+        args.load_model_from_checkpoint = load_model_from_checkpoint
     else:
-        raise Exception("Invalid Environment")
+        
+        print(f"loading data from {args.load_model_from_checkpoint}")
+        with open(args.load_model_from_checkpoint + '/config.json', 'rt') as f:
+            t_args = argparse.Namespace()
+            t_args.__dict__.update(json.load(f))
+            args = parser.parse_args(namespace=t_args)
+
+        # print(args)
+        # assert False, "ending for testing"
 
     # warning for deterministic execution
     if args.deterministic_execution:
