@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 
+from torch.nn import functional as F
 from environments.parallel_envs import make_vec_envs
 from utils import helpers as utl
 
@@ -72,7 +73,7 @@ def evaluate_rl2(
         for step_idx in range(num_steps):
 
             with torch.no_grad():
-                latent = torch.cat((latent_mean, latent_logvar), dim=-1).squeeze()
+                latent = F.relu(torch.cat((latent_mean, latent_logvar), dim=-1).squeeze())
                 _, action = policy.act(None, latent, None, None, deterministic=deterministic)
 
             # observe reward and next obs
