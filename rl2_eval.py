@@ -7,6 +7,7 @@ import os
 from environments.custom_metaworld_benchmark import CustomML10
 
 from utils.rl2_eval_utils import *
+from utils.helpers import boolean_argument
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -17,7 +18,7 @@ def main():
     parser.add_argument('--num_episodes', default = 10)
     parser.add_argument('--num_rounds', default = 1)
     parser.add_argument('--num_explore', default = None)
-    # parser.add_argument('--deterministic', default=False)
+    parser.add_argument('--deterministic', type=boolean_argument, default=True)
     parser.add_argument('--benchmark', default='ML10')
 
     args, rest_args = parser.parse_known_args()
@@ -29,6 +30,7 @@ def main():
     num_explore = int(args.num_explore) if args.num_explore is not None else args.num_explore
     train_benchmark = args.benchmark + '-v2'
     test_benchmark = args.benchmark + '_test-v2'
+    deterministic = args.deterministic
 
     ## create the log folder if it doesn't
     if not os.path.exists(log_folder):
@@ -43,8 +45,6 @@ def main():
     ## Create RL2 agent
     policy_net = torch.load(run_folder + '/models/policy.pt')
     encoder_net = torch.load(run_folder + '/models/encoder.pt')
-    # ac = ActorCritic(policy_net, encoder_net)
-    # agent = rl2_agent(ac)
 
     # # get benchmark and tasks
     if args.benchmark == 'CustomML10':
@@ -72,7 +72,7 @@ def main():
             num_episodes=num_episodes,
             num_processes=len(train_tasks),
             num_explore = num_explore,
-            deterministic = False
+            deterministic = deterministic
         )
 
         train_results = combine_results(train_tasks, train_reward, train_success)
@@ -105,10 +105,16 @@ def main():
 
     print(
         'train results:\n',
+        'by task:\n',
         train_all_results.loc[:, ['tasks', 'mean_rewards', 'successes']].groupby('tasks').mean(),
+        'by episode:\n',
+        train_all_results.loc[:, ['episode','mean_rewards', 'successes']].groupby('episode').mean(),
         '\n===================',
         'test results:\n',
+        'by task:\n',
         test_all_results.loc[:, ['tasks', 'mean_rewards', 'successes']].groupby('tasks').mean(),
+        'by episode:\n',
+        test_all_results.loc[:, ['episode','mean_rewards', 'successes']].groupby('episode').mean(),
         '\n==================='
     )
 
