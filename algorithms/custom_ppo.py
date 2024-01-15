@@ -88,16 +88,16 @@ class CustomPPO:
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
                 ## TODO: I think I should not detach this
-                latent_batch = latent_batch#.detach()
+                # latent_batch = latent_batch#.detach()
 
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy = \
                     self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch,
                                                        belief=None, task=None,
                                                        action=actions_batch)
-                # set to double to avoid Inf values
-                ratio = torch.exp(action_log_probs.double() -
-                            old_action_log_probs_batch.double())
+                
+                ratio = torch.exp(action_log_probs -
+                            old_action_log_probs_batch)
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
                 action_loss = -torch.min(surr1, surr2).mean()
@@ -163,6 +163,18 @@ class CustomPPO:
     
     def get_value(self, state, latent, belief, task):
         return self.actor_critic.get_value(state, latent, belief, task)
+    
+    def get_latent(self, action, state, reward, hidden_state, return_prior = False):
+        _, latent_mean, latent_logvar, hidden_state = self.actor_critic.encoder(action, state, reward, hidden_state, return_prior = return_prior)
+        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)
+        ## assume always add non-linearity to latent
+        return F.relu(latent), hidden_state
+    
+    def get_prior(self, num_processes):
+        _, latent_mean, latent_logvar, hidden_state = self.actor_critic.encoder.prior(num_processes)
+        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+        ## assume always add non-linearity to latent
+        return F.relu(latent), hidden_state
     
     def _recompute_embeddings(self, policy_storage, sample, update_idx, detach_every):
         latent = [policy_storage.latent[0].detach().clone()]

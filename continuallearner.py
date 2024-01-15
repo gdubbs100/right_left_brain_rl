@@ -34,6 +34,8 @@ class ContinualLearner:
             steps_per_env, 
             log_dir, 
             scenario_name, 
+            gamma = 0.99,
+            tau = 0.95,
             log_every = 10,
             quantiles = [i/10 for i in range(1, 10)],
             randomization = 'random_init_fixed20'):
@@ -41,6 +43,9 @@ class ContinualLearner:
         # self.args = args
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
+
+        self.gamma = gamma
+        self.tau = tau
 
         ## initialise the envs
         self.raw_train_envs = prepare_base_envs(task_names, randomization=randomization)
@@ -113,45 +118,57 @@ class ContinualLearner:
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
             with torch.no_grad():
-                _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(self.num_processes)
 
+                ## TODO: NEED TO CORRECTLY APPLY ACTIVATION FUNCTION TO LATENTS
+                ## PERHAPS DO THIS IN THE ACTOR-CRITIC CLASS ITSELF
+                # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(self.num_processes)
+                latent, hidden_state = self.agent.get_prior(self.num_processes)
                 assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
                 self.storage.hidden_states[:1].copy_(hidden_state)
-                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+                # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
                 self.storage.latent.append(latent)
 
             while not all(done):
-                value, action = self.agent.act(obs, latent, None, None)
+                with torch.no_grad():
+                    value, action = self.agent.act(obs, latent, None, None)
+
                 next_obs, reward, done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
-                obs = next_obs
+                # obs = next_obs
 
                 ## TODO: review this
                 # episode_reward += #reward.sum() / self.num_processes
                 episode_reward.append(reward)
-                ## TODO: do I even need masks? - check how advantages are calculated
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
                 # bad_mask is true if episode ended because time limit was reached
                 # don't care for metaworld
-                bad_masks = torch.FloatTensor([[0.0] for _done in done]).to(device)
+                ## TODO: DELETE
+                bad_masks = masks_done #torch.FloatTensor([[0.0] for _done in done]).to(device)
 
                 # TODO: check if this needs to be done - how is it done in other loops
                 # reset hidden state if done
-                if all(done):
-                    hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
-
-                _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
-                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+                ## don't think this needs to be done
+                # if all(done):
+                #     hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
+                with torch.no_grad():
+                    # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(
+                    #     action, next_obs, reward, hidden_state, return_prior = False)
+                    # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+                    latent, hidden_state = self.agent.get_latent(
+                        action, next_obs, reward, hidden_state, return_prior = False
+                    )
+                    # just keep this for now
+                    latent = latent[None,:]
 
                 
-                self.storage.next_state[step] = obs.clone()
+                self.storage.next_state[step] = next_obs.clone()
                 ## TODO: need to figure out how to include gating values
                 ## TODO: need to figure out how to include task for EWC
                 self.storage.insert(
-                    state=obs.squeeze(),
+                    state=next_obs.squeeze(),
                     belief=None, # could I get rid of belief?
                     task=None, # could I get rid of task?
                     actions=action.double(),
@@ -165,10 +182,40 @@ class ContinualLearner:
                     latent = latent,
                 )
 
-                step += 1
+                obs = next_obs
 
-            ## Log training loss
+                step += 1
+            
+            with torch.no_grad():
+                # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(
+                #     action, obs, reward, hidden_state, return_prior = False)
+                # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+                latent, hidden_state = self.agent.get_latent(
+                    action, obs, reward, hidden_state, return_prior = False
+                )
+                latent = latent[None, :]
+
+                value = self.agent.get_value(
+                    obs,
+                    latent,
+                    None,
+                    None
+                ).detach() # detach from computation graph
+
+            # compute returns - use_proper_time_limits is false
+            self.storage.compute_returns(
+                next_value = value,
+                use_gae = True,
+                gamma = self.gamma,
+                tau = self.tau,
+                use_proper_time_limits=False
+            )
+
+
+            ## Update
             value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
+
+            ## log training loss
             self.logger.add_tensorboard('value_loss', value_loss_epoch, eps)
             self.logger.add_tensorboard('action_loss', action_loss_epoch, eps)
             self.logger.add_tensorboard('entropy_loss', dist_entropy_epoch, eps)
@@ -180,10 +227,10 @@ class ContinualLearner:
 
             if (eps+1) % self.log_every == 0:
                 print(f"Evaluating at Episode: {eps}")
-                self.evaluate(current_task, eps)
+                #self.evaluate(current_task, eps)
 
                 ## save the network
-                self.logger.save_network(self.agent.actor_critic)
+                #self.logger.save_network(self.agent.actor_critic)
 
             eps+=1
         end_time = time.time()
@@ -220,6 +267,7 @@ class ContinualLearner:
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
             with torch.no_grad():
+                ## TODO: correctly apply latent nonlinearity
                 _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(test_processes)
                 latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
 
@@ -238,6 +286,7 @@ class ContinualLearner:
                 successes.append(torch.tensor([i['success'] for i in info]))
 
                 with torch.no_grad():
+                    ## TODO: correctly apply latent non-linearity
                     _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
                     latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
 
