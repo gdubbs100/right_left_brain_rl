@@ -176,6 +176,7 @@ class CustomPPO:
         ## assume always add non-linearity to latent
         return F.relu(latent), hidden_state
     
+    ## This is a bit inconsistent with the rest of the getting of latents and stuff
     def _recompute_embeddings(self, policy_storage, sample, update_idx, detach_every):
         latent = [policy_storage.latent[0].detach().clone()]
         latent[0].requires_grad = True
@@ -197,7 +198,9 @@ class CustomPPO:
                 detach_every=detach_every
             )
 
+            ## apply the nonlinearity manually
             latent.append(torch.cat((tm, tl), dim = -1)[None,:])
+            latent = F.relu(latent)
 
         if update_idx == 0:
             try:
