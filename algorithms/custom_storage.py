@@ -222,7 +222,7 @@ class CustomOnlineStorage(object):
 
     def num_transitions(self):
         return len(self.prev_state) * self.num_processes
-### TODO: update as appropriate
+    ### TODO: update as appropriate
     def before_update(self, policy):
         # this is about building the computation graph during training
         # latent = utl.get_latent_for_policy(self.args,
