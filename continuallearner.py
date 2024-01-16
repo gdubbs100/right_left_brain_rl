@@ -52,10 +52,12 @@ class ContinualLearner:
         self.task_names = np.unique(task_names)
         self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_train_envs)}
         self.envs = prepare_parallel_envs(
-            self.raw_train_envs,
-            steps_per_env,
-            num_processes,
-            device
+            envs = self.raw_train_envs,
+            steps_per_env=steps_per_env,
+            num_processes=num_processes,
+            gamma=gamma,
+            normalise_rew=True,
+            device=device
         )
 
         # only eval on unique envs
@@ -63,7 +65,6 @@ class ContinualLearner:
 
         # set params for runs
         self.num_processes = num_processes
-        # steps_per_env = 2000 # might be passed to envs during env creation
         self.rollout_len = rollout_len
 
         # network
@@ -78,7 +79,7 @@ class ContinualLearner:
                     self.envs.action_space, 
                     self.agent.actor_critic.encoder.hidden_size, 
                     self.agent.actor_critic.encoder.latent_dim, 
-                    False # what's this?
+                    False # normalise rewards for policy - set to true, but implement
                 )
         
         ## TODO: think about how to log all args - 
@@ -134,6 +135,10 @@ class ContinualLearner:
                     value, action = self.agent.act(obs, latent, None, None)
 
                 next_obs, reward, done, info = self.envs.step(action)
+                if isinstance(reward, list):
+                    rew_raw = reward[0]
+                    rew_norm = reward[1]
+                    print(rew_raw, rew_norm)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
                 # obs = next_obs

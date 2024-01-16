@@ -7,6 +7,7 @@ import torch
 from torch.nn import functional as F
 from environments.parallel_envs import make_vec_envs
 from utils import helpers as utl
+from environments.env_utils.running_mean_std import RunningMeanStd
 
 # from environments.custom_env_utils import prepare_base_envs, prepare_parallel_envs
 
@@ -45,7 +46,7 @@ def evaluate_rl2(
                          rank_offset=num_processes + 1,  # to use diff tmp folders than main processes
                          episodes_per_task=num_episodes,
                          normalise_rew=False,
-                         ret_rms=None,
+                         ret_rms=RunningMeanStd(),
                          tasks=None,
                          add_done_info=True,
                          )

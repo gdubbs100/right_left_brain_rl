@@ -9,6 +9,7 @@ from continualworld_utils.utils import get_subtasks
 from continualworld_utils.constants import MT50
 from environments.env_utils.vec_env import VecEnvWrapper
 from environments.env_utils.vec_env.subproc_vec_env import SubprocVecEnv
+from environments.env_utils.vec_env.custom_vec_normalize import CustomVecNormalize
 
 
 def make_continual_env(env_id, **kwargs):
@@ -38,10 +39,12 @@ def prepare_base_envs(task_names, benchmark = MT50, task_set = 'train', randomiz
         envs.append(env)
     return envs
 
-def prepare_parallel_envs(envs, steps_per_env, num_processes, device):
+def prepare_parallel_envs(envs, steps_per_env, num_processes, gamma, normalise_rew, device):
     subproc_envs = SubprocVecEnv(
         [make_continual_env('continualMW-v0', **{'envs' : envs, 'steps_per_env': steps_per_env}) for _ in range(num_processes)]
     )
+    if normalise_rew:
+        subproc_envs = CustomVecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
     pytorch_envs = PyTorchVecEnvCont(subproc_envs, device)
     return pytorch_envs
 
