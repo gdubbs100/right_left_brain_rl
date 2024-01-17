@@ -199,8 +199,7 @@ class CustomPPO:
             )
 
             ## apply the nonlinearity manually
-            latent.append(torch.cat((tm, tl), dim = -1)[None,:])
-            latent = F.relu(latent)
+            latent.append(F.relu(torch.cat((tm, tl), dim = -1)[None,:]))
 
         if update_idx == 0:
             try:

@@ -32,6 +32,7 @@ class ContinualLearner:
             num_processes, 
             rollout_len, 
             steps_per_env, 
+            normalise_rewards,
             log_dir, 
             scenario_name, 
             gamma = 0.99,
@@ -46,6 +47,7 @@ class ContinualLearner:
 
         self.gamma = gamma
         self.tau = tau
+        self.normalise_rewards = normalise_rewards
 
         ## initialise the envs
         self.raw_train_envs = prepare_base_envs(task_names, randomization=randomization)
@@ -55,8 +57,8 @@ class ContinualLearner:
             envs = self.raw_train_envs,
             steps_per_env=steps_per_env,
             num_processes=num_processes,
-            gamma=gamma,
-            normalise_rew=True,
+            gamma=self.gamma,
+            normalise_rew=self.normalise_rewards,
             device=device
         )
 
@@ -79,7 +81,7 @@ class ContinualLearner:
                     self.envs.action_space, 
                     self.agent.actor_critic.encoder.hidden_size, 
                     self.agent.actor_critic.encoder.latent_dim, 
-                    False # normalise rewards for policy - set to true, but implement
+                    self.normalise_rewards # normalise rewards for policy - set to true, but implement
                 )
         
         ## TODO: think about how to log all args - 
@@ -134,24 +136,15 @@ class ContinualLearner:
                 with torch.no_grad():
                     value, action = self.agent.act(obs, latent, None, None)
 
-                next_obs, reward, done, info = self.envs.step(action)
-                if isinstance(reward, list):
-                    rew_raw = reward[0]
-                    rew_norm = reward[1]
-                    print(rew_raw, rew_norm)
+                next_obs, (rew_raw, rew_normalised), done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
-                # obs = next_obs
+                episode_reward.append(rew_raw)
 
-                ## TODO: review this
-                # episode_reward += #reward.sum() / self.num_processes
-                episode_reward.append(reward)
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
                 # bad_mask is true if episode ended because time limit was reached
-                # don't care for metaworld
-                ## TODO: DELETE
-                bad_masks = masks_done #torch.FloatTensor([[0.0] for _done in done]).to(device)
+              
 
                 # TODO: check if this needs to be done - how is it done in other loops
                 # reset hidden state if done
@@ -163,7 +156,7 @@ class ContinualLearner:
                     #     action, next_obs, reward, hidden_state, return_prior = False)
                     # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
                     latent, hidden_state = self.agent.get_latent(
-                        action, next_obs, reward, hidden_state, return_prior = False
+                        action, next_obs, rew_raw, hidden_state, return_prior = False
                     )
                     # just keep this for now
                     latent = latent[None,:]
@@ -177,11 +170,11 @@ class ContinualLearner:
                     belief=None, # could I get rid of belief?
                     task=None, # could I get rid of task?
                     actions=action.double(),
-                    rewards_raw=reward.squeeze(0),
-                    rewards_normalised=reward.squeeze(0),#rew_normalised, don't use
+                    rewards_raw=rew_raw.squeeze(0),
+                    rewards_normalised=rew_normalised.squeeze(0),
                     value_preds=value.squeeze(0),
-                    masks=masks_done.squeeze(0), # do I even need these?
-                    bad_masks=bad_masks.squeeze(0), 
+                    masks=masks_done.squeeze(0), 
+                    bad_masks=masks_done.squeeze(0), ## removed bad masks
                     done=torch.from_numpy(done)[:,None].float(),
                     hidden_states = hidden_state.squeeze(),
                     latent = latent,
@@ -196,7 +189,7 @@ class ContinualLearner:
                 #     action, obs, reward, hidden_state, return_prior = False)
                 # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
                 latent, hidden_state = self.agent.get_latent(
-                    action, obs, reward, hidden_state, return_prior = False
+                    action, obs, rew_raw, hidden_state, return_prior = False
                 )
                 latent = latent[None, :]
 
@@ -232,7 +225,7 @@ class ContinualLearner:
 
             if (eps+1) % self.log_every == 0:
                 print(f"Evaluating at Episode: {eps}")
-                #self.evaluate(current_task, eps)
+                self.evaluate(current_task, eps)
 
                 ## save the network
                 #self.logger.save_network(self.agent.actor_critic)
@@ -245,13 +238,15 @@ class ContinualLearner:
     def evaluate(self, current_task, eps, test_processes = 10):
         start_time = time.time() # use this in logger?
         current_task_name = self.env_id_to_name[current_task + 1]
-        
+        print(f"starting evaluation at {start_time} with training task {current_task_name}")
         ## num runs given by test_processes
         test_envs = prepare_parallel_envs(
-            self.raw_test_envs, 
-            self.rollout_len,
-            test_processes, 
-            device
+            envs=self.raw_test_envs, 
+            steps_per_env=self.rollout_len,
+            num_processes=test_processes,
+            gamma=self.gamma,
+            normalise_rew=self.normalise_rewards,
+            device=device
         )
 
         # record outputs
@@ -264,7 +259,8 @@ class ContinualLearner:
         }
 
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
-
+            current_test_env = test_envs.get_env_attr('cur_seq_idx') + 1
+            print(f"evaluating {self.env_id_to_name[current_test_env]}")
             obs = test_envs.reset() # we reset all at once as metaworld is time limited
             episode_reward = []
             successes = []
@@ -272,33 +268,44 @@ class ContinualLearner:
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
             with torch.no_grad():
-                ## TODO: correctly apply latent nonlinearity
-                _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(test_processes)
-                latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+                latent, hidden_state = self.agent.get_prior(self.num_processes)
 
-
+            i = 0
             while not all(done):
+                i += 1
+                print(i)
+                print(done)
                 with torch.no_grad():
-                    _, action = self.agent.act(obs, latent, None, None)
-                next_obs, reward, done, info = test_envs.step(action)
+                    print('get_action')
+                    # be deterministic in eval
+                    _, action = self.agent.act(obs, latent, None, None, deterministic = True)
+                    print('got action')
+                
+                # no need for normalised_reward during eval
+                print(f"action to pass to env: {action}")
+                print(test_envs.step(action))
+                next_obs, (rew_raw, _), done, info = test_envs.step(action)
+                print('stepped env')
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
+                print('passed assert')
 
                 obs = next_obs
 
                 ## combine all rewards
-                episode_reward.append(reward)
+                episode_reward.append(rew_raw)
                 # if we succeed at all then the task is successful
                 successes.append(torch.tensor([i['success'] for i in info]))
-
+                print('getting latent')
                 with torch.no_grad():
-                    ## TODO: correctly apply latent non-linearity
-                    _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(action, obs, reward, hidden_state, return_prior = False)
-                    latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+                    latent, hidden_state = self.agent.get_latent(
+                    action, obs, rew_raw, hidden_state, return_prior = False
+                    )
+                    latent = latent[None, :]
+                print('got latent')
 
             ## log the results here
-            ## TODO: should we have test_envs.get_env_attr('cur_seq_idx') + 1?
-            task_rewards[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')+1]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[test_envs.get_env_attr('cur_seq_idx')+1]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
+            task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
+            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
 
         end_time = time.time()
         self.logger.add_tensorboard('current_task', current_task, eps)

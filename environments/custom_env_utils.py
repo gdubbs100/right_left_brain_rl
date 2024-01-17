@@ -43,8 +43,10 @@ def prepare_parallel_envs(envs, steps_per_env, num_processes, gamma, normalise_r
     subproc_envs = SubprocVecEnv(
         [make_continual_env('continualMW-v0', **{'envs' : envs, 'steps_per_env': steps_per_env}) for _ in range(num_processes)]
     )
-    if normalise_rew:
-        subproc_envs = CustomVecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
+
+    # returns tuple of (reward, norm_reward) if normalise_rew, (reward, reward) otherwise
+    subproc_envs = CustomVecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
+
     pytorch_envs = PyTorchVecEnvCont(subproc_envs, device)
     return pytorch_envs
 
