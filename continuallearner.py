@@ -260,7 +260,7 @@ class ContinualLearner:
 
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
             current_test_env = test_envs.get_env_attr('cur_seq_idx') + 1
-            print(f"evaluating {self.env_id_to_name[current_test_env]}")
+            # print(f"evaluating {self.env_id_to_name[current_test_env]}")
             obs = test_envs.reset() # we reset all at once as metaworld is time limited
             episode_reward = []
             successes = []
@@ -268,26 +268,19 @@ class ContinualLearner:
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
             with torch.no_grad():
-                latent, hidden_state = self.agent.get_prior(self.num_processes)
+                latent, hidden_state = self.agent.get_prior(test_processes)
 
             i = 0
             while not all(done):
                 i += 1
-                print(i)
-                print(done)
                 with torch.no_grad():
-                    print('get_action')
                     # be deterministic in eval
                     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
-                    print('got action')
                 
                 # no need for normalised_reward during eval
-                print(f"action to pass to env: {action}")
-                print(test_envs.step(action))
                 next_obs, (rew_raw, _), done, info = test_envs.step(action)
-                print('stepped env')
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
-                print('passed assert')
+
 
                 obs = next_obs
 
@@ -295,13 +288,12 @@ class ContinualLearner:
                 episode_reward.append(rew_raw)
                 # if we succeed at all then the task is successful
                 successes.append(torch.tensor([i['success'] for i in info]))
-                print('getting latent')
+
                 with torch.no_grad():
                     latent, hidden_state = self.agent.get_latent(
                     action, obs, rew_raw, hidden_state, return_prior = False
                     )
                     latent = latent[None, :]
-                print('got latent')
 
             ## log the results here
             task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
