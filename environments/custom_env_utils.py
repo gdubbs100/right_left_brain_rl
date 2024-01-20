@@ -63,9 +63,11 @@ class PyTorchVecEnvCont(VecEnvWrapper):
     def step_wait(self):
         state, reward, done, info = self.venv.step_wait()
         if isinstance(state, list):  # raw + normalised .permute(1, 0, 2)
-            state = [torch.from_numpy(s).permute(1, 0, 2).float().to(self.device) for s in state]
+            #.permute(1, 0, 2)
+            state = [torch.from_numpy(s).float().to(self.device) for s in state]
         else:
-            state = torch.from_numpy(state).permute(1, 0, 2).float().to(self.device)
+            #.permute(1, 0, 2)
+            state = torch.from_numpy(state).float().to(self.device)
         # reshape rewards to have dim T X B X D .reshape(1, -1, 1)
         if isinstance(reward, list):  # raw + normalised
             reward = [torch.from_numpy(r).unsqueeze(dim=1).reshape(1, -1, 1).float().to(self.device) for r in reward]
@@ -79,9 +81,11 @@ class PyTorchVecEnvCont(VecEnvWrapper):
         state = self.venv.reset()
         ## permute state to have dimensions T X B X D .permute(1,0,2)
         if isinstance(state, list):
-            state = [torch.from_numpy(s).permute(1, 0, 2).float().to(self.device) for s in state]
+            # .permute(1, 0, 2)
+            state = [torch.from_numpy(s).float().to(self.device) for s in state]
         else:
-            state = torch.from_numpy(state).permute(1, 0, 2).float().to(self.device)
+            #.permute(1, 0, 2)
+            state = torch.from_numpy(state).float().to(self.device)
         return state
 
     def __getattr__(self, attr):

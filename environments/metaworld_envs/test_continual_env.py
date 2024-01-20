@@ -47,26 +47,13 @@ class ContinualEnv(gym.Env):
 
         ## add done flag
         to_append = 1 if done else 0
-        obs = np.append(obs, to_append).reshape(1, -1)
+        obs = np.concatenate((obs, [0.0]))
 
         return obs, reward, done, info
 
     def reset(self) -> np.ndarray:
         obs, _ = self.envs[self.cur_seq_idx].reset()
         # add done flag
-        obs = np.append(obs, 0).reshape(1, -1)
+        obs = np.concatenate((obs, [0.0]))
         return obs
-    
-    # def update_cur_step(self, value: int):
-    #     """
-    #     Manually update cur_step
-    #     Can help manage vec envs        
-    #     """
-    #     self.cur_step = value
 
-    # def update_cur_seq_idx(self, value: int):
-    #     """
-    #     Manually update cur_seq_idx
-    #     Can help manage vec envs
-    #     """
-    #     self.cur_seq_idx = value
