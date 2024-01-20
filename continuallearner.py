@@ -270,9 +270,9 @@ class ContinualLearner:
             with torch.no_grad():
                 latent, hidden_state = self.agent.get_prior(test_processes)
 
-            i = 0
+            # i = 0
             while not all(done):
-                i += 1
+                # i += 1
                 with torch.no_grad():
                     # be deterministic in eval
                     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
