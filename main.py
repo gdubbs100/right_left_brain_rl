@@ -11,7 +11,7 @@ import torch
 
 # get configs
 from config.metaworld_config import \
-    args_ML10_rl2, args_CustomML10_rl2
+    args_ML10_rl2, args_CustomML10_rl2, args_ML1_rl2
 from config.gridworld import \
     args_grid_belief_oracle, args_grid_rl2, args_grid_varibad
 from config.pointrobot import \
@@ -49,6 +49,8 @@ def main():
         elif env == 'CustomML10_rl2':
             args = args_CustomML10_rl2.get_args(rest_args)
             assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
+        elif env == 'ML1_rl2':
+            args = args_ML1_rl2.get_args(rest_args)
         else:
             raise Exception("Invalid Environment")
         args.load_model_from_checkpoint = load_model_from_checkpoint
@@ -59,9 +61,6 @@ def main():
             t_args = argparse.Namespace()
             t_args.__dict__.update(json.load(f))
             args = parser.parse_args(namespace=t_args)
-
-        # print(args)
-        # assert False, "ending for testing"
 
     # warning for deterministic execution
     if args.deterministic_execution:

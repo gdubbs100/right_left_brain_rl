@@ -130,6 +130,18 @@ register(
 )
 
 register(
+    'ML1-v2',
+    entry_point='environments.metaworld_envs.ml1:ML1Env',
+    max_episode_steps=500
+)
+
+register(
+    'ML1_test-v2',
+    entry_point='environments.metaworld_envs.ml1:ML1TestEnv',
+    max_episode_steps=500
+)
+
+register(
     'continualMW-v0',
     entry_point = 'environments.metaworld_envs.test_continual_env:ContinualEnv',
     kwargs={'steps_per_env':10000, 'envs': None}
