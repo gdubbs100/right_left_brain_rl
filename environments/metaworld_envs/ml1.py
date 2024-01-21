@@ -7,7 +7,7 @@ class ML1Env(gym.Env):
 
     def __init__(self):
         ## hardcode this - easy to learn env base on https://jmlr.org/papers/volume22/21-0657/21-0657.pdf
-        self.env_name = 'push-v2'
+        self.env_name = 'reach-v2'
         # initialise blank env
         self.benchmark = metaworld.ML1(self.env_name)
         self.task_names = list(self.benchmark.train_classes.keys())
@@ -61,7 +61,7 @@ class ML1TestEnv(gym.Env):
 
     def __init__(self):
         ## hardcode this - easy to learn env base on https://jmlr.org/papers/volume22/21-0657/21-0657.pdf
-        self.env_name = 'push-v2'
+        self.env_name = 'reach-v2'
         # initialise blank env
         self.benchmark = metaworld.ML1(self.env_name)
         self.task_names = list(self.benchmark.test_classes.keys())
