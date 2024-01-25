@@ -52,7 +52,7 @@ def main():
         elif env == 'ML1_rl2':
             args = args_ML1_rl2.get_args(rest_args)
         else:
-            raise Exception("Invalid Environment")
+            raise Exception(f"Invalid Environment: {env}")
         args.load_model_from_checkpoint = load_model_from_checkpoint
     else:
         
@@ -61,6 +61,10 @@ def main():
             t_args = argparse.Namespace()
             t_args.__dict__.update(json.load(f))
             args = parser.parse_args(namespace=t_args)
+
+        ## change seed so to avoid running through the same environment samples
+        args.seed += 1
+        print(f"setting seed to {args.seed}")
 
     # warning for deterministic execution
     if args.deterministic_execution:

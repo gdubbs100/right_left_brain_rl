@@ -52,8 +52,11 @@ def main():
 
     elif args.benchmark == 'ML10':
         benchmark = metaworld.ML10()
+
+    elif args.benchmark == 'ML1':
+        benchmark = metaworld.ML1('reach-v2')
     else:
-        raise ValueError(f"{args.benchmark} is not available, please choose: CustomML10 or ML10")
+        raise ValueError(f"{args.benchmark} is not available, please choose: CustomML10 or ML10 ML1")
 
     # get task names
     train_tasks = list(benchmark.train_classes.keys())

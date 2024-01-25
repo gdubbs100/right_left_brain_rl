@@ -133,3 +133,8 @@ class CustomML10(Benchmark):
             self._test_classes, test_kwargs, _ML_OVERRIDE, seed=seed
         )
 
+
+## TODO: create CW benchmark
+## CW Benchmark
+## create a standard benchmark with CW classes
+## but should we use the MT or the ML envs? potentially have a setting for both?
