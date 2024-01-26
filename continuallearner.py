@@ -33,15 +33,16 @@ class ContinualLearner:
             rollout_len, 
             steps_per_env, 
             normalise_rewards,
-            log_dir, 
-            scenario_name, 
+            log_dir,  
             gamma = 0.99,
             tau = 0.95,
             log_every = 10,
             quantiles = [i/10 for i in range(1, 10)],
-            randomization = 'random_init_fixed20'):
+            randomization = 'random_init_fixed20',
+            args = None):
 
-        # self.args = args
+        self.args = args
+
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
 
@@ -88,8 +89,7 @@ class ContinualLearner:
         # am I going to need to pass the args into the trainer, into the logger? urgh
         self.quantiles = quantiles
         self.log_dir = log_dir
-        self.scenario_name = scenario_name
-        self.logger = CustomLogger(self.log_dir, self.scenario_name, self.quantiles)
+        self.logger = CustomLogger(self.log_dir, self.quantiles, args = self.args)
         self.log_every = log_every
 
         # # calculate number of updates and keep count of frames/iterations
@@ -101,13 +101,6 @@ class ContinualLearner:
     def train(self):
         """ Main Training loop """
         start_time = time.time() # use this in logger?
-
-        ## TODO: should this be some sort of assert? (perhaps where args are established)
-        # print(
-        #     steps_per_env % num_processes * rollout_len == 0,
-        #     steps_per_env - num_processes * rollout_len >= 0
-        # )
-        
         eps = 0
 
         # steps limit is parameter for whole continual env
@@ -122,14 +115,10 @@ class ContinualLearner:
             ## TODO: determine how frequently to get prior - do at start of each episode for now
             with torch.no_grad():
 
-                ## TODO: NEED TO CORRECTLY APPLY ACTIVATION FUNCTION TO LATENTS
-                ## PERHAPS DO THIS IN THE ACTOR-CRITIC CLASS ITSELF
-                # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder.prior(self.num_processes)
                 latent, hidden_state = self.agent.get_prior(self.num_processes)
                 assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
                 self.storage.hidden_states[:1].copy_(hidden_state)
-                # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
                 self.storage.latent.append(latent)
 
             while not all(done):
@@ -185,9 +174,6 @@ class ContinualLearner:
                 step += 1
             
             with torch.no_grad():
-                # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(
-                #     action, obs, reward, hidden_state, return_prior = False)
-                # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
                 latent, hidden_state = self.agent.get_latent(
                     action, obs, rew_raw, hidden_state, return_prior = False
                 )
@@ -228,7 +214,7 @@ class ContinualLearner:
                 self.evaluate(current_task, eps)
 
                 ## save the network
-                #self.logger.save_network(self.agent.actor_critic)
+                self.logger.save_network(self.agent.actor_critic)
 
             eps+=1
         end_time = time.time()
@@ -260,7 +246,6 @@ class ContinualLearner:
 
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
             current_test_env = test_envs.get_env_attr('cur_seq_idx') + 1
-            # print(f"evaluating {self.env_id_to_name[current_test_env]}")
             obs = test_envs.reset() # we reset all at once as metaworld is time limited
             episode_reward = []
             successes = []
@@ -270,9 +255,7 @@ class ContinualLearner:
             with torch.no_grad():
                 latent, hidden_state = self.agent.get_prior(test_processes)
 
-            # i = 0
             while not all(done):
-                # i += 1
                 with torch.no_grad():
                     # be deterministic in eval
                     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
@@ -297,7 +280,7 @@ class ContinualLearner:
 
             ## log the results here
             task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].sum() #/ test_processes
+            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].sum()
 
         end_time = time.time()
         self.logger.add_tensorboard('current_task', current_task, eps)

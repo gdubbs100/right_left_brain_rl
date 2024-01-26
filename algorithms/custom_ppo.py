@@ -14,8 +14,6 @@ class CustomPPO:
                  value_loss_coef,
                  entropy_coef,
                  policy_optimiser,
-                 policy_anneal_lr,
-                 train_steps,
                  lr=None,
                  clip_param=0.2,
                  ppo_epoch=5,
@@ -46,16 +44,6 @@ class CustomPPO:
             self.optimiser = optim.Adam(actor_critic.parameters(), lr=lr, eps=eps)
         elif policy_optimiser == 'rmsprop':
             self.optimiser = optim.RMSprop(actor_critic.parameters(), lr=lr, eps=eps, alpha=0.99)
-        # self.optimiser_vae = optimiser_vae
-
-        self.lr_scheduler_policy = None
-        self.lr_scheduler_encoder = None
-        if policy_anneal_lr:
-            raise NotImplementedError
-            # lam = lambda f: 1 - f / train_steps
-            # self.lr_scheduler_policy = optim.lr_scheduler.LambdaLR(self.optimiser, lr_lambda=lam)
-            # if hasattr(self.args, 'rlloss_through_encoder') and self.args.rlloss_through_encoder:
-            #     self.lr_scheduler_encoder = optim.lr_scheduler.LambdaLR(self.optimiser_vae, lr_lambda=lam)
 
     def update(self, policy_storage):
 
@@ -86,9 +74,6 @@ class CustomPPO:
 
                 state_batch, actions_batch, latent_batch, value_preds_batch, \
                 return_batch, old_action_log_probs_batch, adv_targ = sample
-
-                ## TODO: I think I should not detach this
-                # latent_batch = latent_batch#.detach()
 
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy = \
@@ -143,11 +128,6 @@ class CustomPPO:
                 # recompute embeddings (to build computation graph) during updates
                 self._recompute_embeddings(policy_storage, sample=False, update_idx=e + 1,
                                              detach_every= self.context_window if self.context_window is not None else None)
-
-        if self.lr_scheduler_policy is not None:
-            self.lr_scheduler_policy.step()
-        if self.lr_scheduler_encoder is not None:
-            self.lr_scheduler_encoder.step()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 

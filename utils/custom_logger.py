@@ -10,11 +10,13 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class CustomLogger:
-    def __init__(self, log_dir, scenario_name, logging_quantiles):
+    def __init__(self, log_dir,  logging_quantiles, args = None):
+
+        self.args = args
 
         self.log_dir = os.path.join(
             log_dir,
-            scenario_name + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
+            'CL' + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
         )
 
         self.csv_dir = self.log_dir + '/results.csv'
@@ -35,14 +37,18 @@ class CustomLogger:
                 self.result_log_headers
             )
 
-        ### TODO: when you create a runner script, make sure you can save out the args in a json
-        # with open(os.path.join(self.full_output_folder, 'config.json'), 'w') as f:
-        #     try:
-        #         config = {k: v for (k, v) in vars(args).items() if k != 'device'}
-        #     except:
-        #         config = args
-        #     config.update(device=device.type)
-        #     json.dump(config, f, indent=2)
+        ### save out args if supplied to continual learner - otherwise ignore
+        if self.args is not None:
+            self.args.log_dir = self.log_dir
+            with open(os.path.join(self.log_dir, 'config.json'), 'w') as f:
+                try:
+                    config = {k: v for (k, v) in vars(self.args).items() if k != 'device'}
+                except:
+                    config = self.args
+                config.update(device=device.type)
+                json.dump(config, f, indent=2)
+        else:
+            print('no args supplied...')
 
     def add_tensorboard(self, name, value, x_pos):
         self.writer.add_scalar(name, value, x_pos)

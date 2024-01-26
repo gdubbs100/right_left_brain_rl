@@ -21,6 +21,7 @@ def main():
     ## TODO: how to randomly initialise a network!?
     parser.add_argument('--run_folder', help = 'location from which to load a network')
     parser.add_argument('--log_folder', default='./logs/continual_learning/')
+    parser.add_argument('--envs', type = str, default = 'CW10', help='tasks to train on - either CW10 or CW20')
 
     ## num processes and env steps
     parser.add_argument('--steps_per_env', type=int, default=1e6, help="Number of steps each environment is trained on. CW uses 1m")
@@ -63,6 +64,7 @@ def main():
     print(
         f"Running with {args.num_processes} processes for {args.steps_per_env / args.num_processes} each for a total of {args.steps_per_env} steps per env."
     )
+    assert args.envs in ['CW20', 'CW10'], f"env is not one of CW10, CW20. env is: {args.envs}"
 
     ## set arg variables 
     policy_loc = args.run_folder + '/models/policy.pt'
@@ -79,8 +81,6 @@ def main():
         value_loss_coef = args.value_loss_coef,
         entropy_coef = args.entropy_coef,
         policy_optimiser=args.optimiser,
-        policy_anneal_lr=False, # remove
-        train_steps = 3, # remove
         lr = args.learning_rate,
         eps= args.eps, # for adam optimiser
         clip_param = args.ppo_clip_param, 
@@ -93,22 +93,23 @@ def main():
 
     ## effective steps per env is the required amount of steps that each paralell env is run for
     effective_steps_per_env = args.steps_per_env / args.num_processes
+    tasks = TASK_SEQS[args.envs]
 
     ## run continual learner
     continual_learner = ContinualLearner(
         args.seed, 
-        TASK_SEQS['CW10'][:1], 
+        tasks, 
         agent, 
         args.num_processes,
         args.rollout_len,
         effective_steps_per_env,
         args.normalise_rewards,
-        args.log_folder, # make location an arg, but perhaps reconsider how this is created, put under logs foler
-        'dummy',
+        args.log_folder, 
         gamma = args.gamma, 
         tau = args.tau, 
         log_every = args.log_every, 
-        randomization=args.randomization 
+        randomization=args.randomization,
+        args = args # pass args through to logger if you want
     )
 
     ## run it
