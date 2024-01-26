@@ -18,8 +18,8 @@ def main():
     ### get args
     parser = argparse.ArgumentParser()
 
-    ## TODO: how to randomly initialise a network!?
-    parser.add_argument('--run_folder', help = 'location from which to load a network')
+    parser.add_argument('--algorithm', type = str, default='left_only', help='type of algorithm to run, choose: left_only, right_only, bicameral')
+    parser.add_argument('--run_folder', help = 'folder from which to load a network - requires config.json if left_only or bicameral, requires policy and encoder networks if right_only')
     parser.add_argument('--log_folder', default='./logs/continual_learning/')
     parser.add_argument('--envs', type = str, default = 'CW10', help='tasks to train on - either CW10 or CW20')
 
@@ -47,15 +47,9 @@ def main():
     parser.add_argument('--optimiser', type=str, default='adam', help='just choose adam')
     parser.add_argument('--eps', type=float, default =1.0e-8, help='eps param for adam optimiser')
 
-    # context_window=None ## make an arg??
-
     ## admin stuff
     parser.add_argument('--seed', type=int, default=42, help="set the seed for maximum reproducibility")
     parser.add_argument('--log_every', type=int, default=10, help="logging frequency where integer value is number of updates")
-
-
-    # TASK_SEQS['CW10'][:1], 
-
 
     args, rest_args = parser.parse_known_args()
 
@@ -64,32 +58,8 @@ def main():
     print(
         f"Running with {args.num_processes} processes for {args.steps_per_env / args.num_processes} each for a total of {args.steps_per_env} steps per env."
     )
+    ## check environment specs
     assert args.envs in ['CW20', 'CW10'], f"env is not one of CW10, CW20. env is: {args.envs}"
-
-    ## set arg variables 
-    policy_loc = args.run_folder + '/models/policy.pt'
-    encoder_loc = args.run_folder + '/models/encoder.pt'
-
-    ## create networks / agents
-    # get RL2 trained policy for example
-    # RUN_FOLDER = './logs/logs_CustomML10-v2/rl2_73__13:01_12:00:05' ## make an arg
-    policy_net = torch.load(policy_loc)
-    encoder_net = torch.load(encoder_loc)
-    ac = ActorCritic(policy_net, encoder_net)
-    agent = CustomPPO(
-        actor_critic=ac,
-        value_loss_coef = args.value_loss_coef,
-        entropy_coef = args.entropy_coef,
-        policy_optimiser=args.optimiser,
-        lr = args.learning_rate,
-        eps= args.eps, # for adam optimiser
-        clip_param = args.ppo_clip_param, 
-        ppo_epoch = args.ppo_epoch, 
-        num_mini_batch=args.num_mini_batch,
-        use_huber_loss = args.use_huberloss,
-        use_clipped_value_loss=args.use_clipped_value_loss,
-        context_window=None ## make an arg??
-    )
 
     ## effective steps per env is the required amount of steps that each paralell env is run for
     effective_steps_per_env = args.steps_per_env / args.num_processes
@@ -99,7 +69,7 @@ def main():
     continual_learner = ContinualLearner(
         args.seed, 
         tasks, 
-        agent, 
+        # agent, 
         args.num_processes,
         args.rollout_len,
         effective_steps_per_env,

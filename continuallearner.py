@@ -5,12 +5,15 @@ import gym
 import numpy as np
 import torch
 
+from models.combined_actor_critic import ActorCritic
+from models.policy import Policy
+from models.encoder import RNNEncoder
+
 from algorithms.custom_ppo import CustomPPO
 from algorithms.custom_storage import CustomOnlineStorage
-# from environments.parallel_envs import make_vec_envs
-# from models.policy import Policy
-# from utils import evaluation as utl_eval
+
 from utils import helpers as utl
+from utils.custom_helpers import get_args_from_config
 from utils.custom_logger import CustomLogger
 from environments.custom_env_utils import prepare_parallel_envs, prepare_base_envs
 
@@ -28,7 +31,7 @@ class ContinualLearner:
             self, 
             seed, 
             task_names,
-            agent, 
+            # agent, 
             num_processes, 
             rollout_len, 
             steps_per_env, 
@@ -70,8 +73,68 @@ class ContinualLearner:
         self.num_processes = num_processes
         self.rollout_len = rollout_len
 
-        # network
-        self.agent = agent
+        # create network and agent
+
+        ## TODO: perhaps put this whole logic in a function for neatness
+        if self.args.algorithm == 'left_only':
+            ## create randomly initialised policy with settings from config file
+            init_args = get_args_from_config(self.args.run_folder)
+            policy_net = Policy(
+                args=init_args,
+                pass_state_to_policy=init_args.pass_state_to_policy,
+                pass_latent_to_policy=init_args.pass_latent_to_policy,
+                pass_belief_to_policy=init_args.pass_belief_to_policy,
+                pass_task_to_policy=init_args.pass_task_to_policy,
+                dim_state=self.envs.observation_space.shape[0]+1, # to add done flag
+                dim_latent=init_args.latent_dim * 2,
+                dim_belief=0,
+                dim_task=0,
+                hidden_layers=init_args.policy_layers,
+                activation_function=init_args.policy_activation_function,
+                policy_initialisation=init_args.policy_initialisation,
+                action_space=self.envs.action_space,
+                init_std=init_args.policy_init_std
+            ).to(device)
+
+            encoder_net = RNNEncoder(
+                args=init_args,
+                layers_before_gru=init_args.encoder_layers_before_gru,
+                hidden_size=init_args.encoder_gru_hidden_size,
+                layers_after_gru=init_args.encoder_layers_after_gru,
+                latent_dim=init_args.latent_dim,
+                action_dim=self.envs.action_space.shape[0],
+                action_embed_dim=init_args.action_embedding_size,
+                state_dim=self.envs.observation_space.shape[0]+1, # for done flag
+                state_embed_dim=init_args.state_embedding_size,
+                reward_size=1,
+                reward_embed_size=init_args.reward_embedding_size,
+            ).to(device)
+
+        elif self.args.algorithm == 'right_only':
+            policy_loc = args.run_folder + '/models/policy.pt'
+            encoder_loc = args.run_folder + '/models/encoder.pt'
+            policy_net = torch.load(policy_loc)
+            encoder_net = torch.load(encoder_loc)
+        elif self.args.algorithm == 'bicameral':
+            ## TODO: develop this
+            raise NotImplementedError
+
+        ## create networks / agents
+        ac = ActorCritic(policy_net, encoder_net)
+        self.agent = CustomPPO(
+            actor_critic=ac,
+            value_loss_coef = self.args.value_loss_coef,
+            entropy_coef = self.args.entropy_coef,
+            policy_optimiser=self.args.optimiser,
+            lr = self.args.learning_rate,
+            eps= self.args.eps, # for adam optimiser
+            clip_param = self.args.ppo_clip_param, 
+            ppo_epoch = self.args.ppo_epoch, 
+            num_mini_batch=self.args.num_mini_batch,
+            use_huber_loss = self.args.use_huberloss,
+            use_clipped_value_loss=self.args.use_clipped_value_loss,
+            context_window=None ## make an arg??
+        )
 
         self.storage = CustomOnlineStorage(
                     self.rollout_len, 
@@ -85,10 +148,9 @@ class ContinualLearner:
                     self.normalise_rewards # normalise rewards for policy - set to true, but implement
                 )
         
-        ## TODO: think about how to log all args - 
-        # am I going to need to pass the args into the trainer, into the logger? urgh
         self.quantiles = quantiles
         self.log_dir = log_dir
+        ## TODO: perhaps pass the RL2 params to the logger to log?
         self.logger = CustomLogger(self.log_dir, self.quantiles, args = self.args)
         self.log_every = log_every
 
