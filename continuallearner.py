@@ -75,7 +75,101 @@ class ContinualLearner:
 
         # create network and agent
 
-        ## TODO: perhaps put this whole logic in a function for neatness
+        # ## TODO: perhaps put this whole logic in a function for neatness
+        self.agent, self.base_network_args = self.init_agent(self.args)
+        # if self.args.algorithm == 'left_only':
+        #     ## create randomly initialised policy with settings from config file
+        #     init_args = get_args_from_config(self.args.run_folder)
+        #     policy_net = Policy(
+        #         args=init_args,
+        #         pass_state_to_policy=init_args.pass_state_to_policy,
+        #         pass_latent_to_policy=init_args.pass_latent_to_policy,
+        #         pass_belief_to_policy=init_args.pass_belief_to_policy,
+        #         pass_task_to_policy=init_args.pass_task_to_policy,
+        #         dim_state=self.envs.observation_space.shape[0]+1, # to add done flag
+        #         dim_latent=init_args.latent_dim * 2,
+        #         dim_belief=0,
+        #         dim_task=0,
+        #         hidden_layers=init_args.policy_layers,
+        #         activation_function=init_args.policy_activation_function,
+        #         policy_initialisation=init_args.policy_initialisation,
+        #         action_space=self.envs.action_space,
+        #         init_std=init_args.policy_init_std
+        #     ).to(device)
+
+        #     encoder_net = RNNEncoder(
+        #         args=init_args,
+        #         layers_before_gru=init_args.encoder_layers_before_gru,
+        #         hidden_size=init_args.encoder_gru_hidden_size,
+        #         layers_after_gru=init_args.encoder_layers_after_gru,
+        #         latent_dim=init_args.latent_dim,
+        #         action_dim=self.envs.action_space.shape[0],
+        #         action_embed_dim=init_args.action_embedding_size,
+        #         state_dim=self.envs.observation_space.shape[0]+1, # for done flag
+        #         state_embed_dim=init_args.state_embedding_size,
+        #         reward_size=1,
+        #         reward_embed_size=init_args.reward_embedding_size,
+        #     ).to(device)
+
+        # elif self.args.algorithm == 'right_only':
+        #     policy_loc = args.run_folder + '/models/policy.pt'
+        #     encoder_loc = args.run_folder + '/models/encoder.pt'
+        #     policy_net = torch.load(policy_loc)
+        #     encoder_net = torch.load(encoder_loc)
+
+        #     ## create init_args from loaded networks
+        #     assert policy_net.args==encoder_net.args, "policy and encoder args should match!"
+        #     init_args = policy_net.args
+        #     del init_args.action_space # not needed for logs, causes error in json
+        # elif self.args.algorithm == 'bicameral':
+        #     ## TODO: develop this
+        #     raise NotImplementedError
+
+        # ## create networks / agents
+        # ac = ActorCritic(policy_net, encoder_net)
+        # self.agent = CustomPPO(
+        #     actor_critic=ac,
+        #     value_loss_coef = self.args.value_loss_coef,
+        #     entropy_coef = self.args.entropy_coef,
+        #     policy_optimiser=self.args.optimiser,
+        #     lr = self.args.learning_rate,
+        #     eps= self.args.eps, # for adam optimiser
+        #     clip_param = self.args.ppo_clip_param, 
+        #     ppo_epoch = self.args.ppo_epoch, 
+        #     num_mini_batch=self.args.num_mini_batch,
+        #     use_huber_loss = self.args.use_huberloss,
+        #     use_clipped_value_loss=self.args.use_clipped_value_loss,
+        #     context_window=None ## make an arg??
+        # )
+
+        self.storage = CustomOnlineStorage(
+                    self.rollout_len, 
+                    self.num_processes, 
+                    self.envs.observation_space.shape[0]+1, 
+                    0, # what's this? 
+                    0, # what's this?
+                    self.envs.action_space, 
+                    self.agent.actor_critic.encoder.hidden_size, 
+                    self.agent.actor_critic.encoder.latent_dim, 
+                    self.normalise_rewards # normalise rewards for policy - set to true, but implement
+                )
+        
+        self.quantiles = quantiles
+        self.log_dir = log_dir
+        ## TODO: perhaps pass the RL2 params to the logger to log?
+        self.logger = CustomLogger(
+            self.log_dir, 
+            self.quantiles, 
+            args = self.args, 
+            base_network_args = self.base_network_args)
+        self.log_every = log_every
+
+        # # calculate number of updates and keep count of frames/iterations
+        # self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
+        # self.frames = 0
+        # self.iter_idx = -1
+
+    def init_agent(self, args):
         if self.args.algorithm == 'left_only':
             ## create randomly initialised policy with settings from config file
             init_args = get_args_from_config(self.args.run_folder)
@@ -115,13 +209,18 @@ class ContinualLearner:
             encoder_loc = args.run_folder + '/models/encoder.pt'
             policy_net = torch.load(policy_loc)
             encoder_net = torch.load(encoder_loc)
+
+            ## create init_args from loaded networks
+            assert policy_net.args==encoder_net.args, "policy and encoder args should match!"
+            init_args = policy_net.args
+            del init_args.action_space # not needed for logs, causes error in json
         elif self.args.algorithm == 'bicameral':
             ## TODO: develop this
             raise NotImplementedError
 
         ## create networks / agents
         ac = ActorCritic(policy_net, encoder_net)
-        self.agent = CustomPPO(
+        agent = CustomPPO(
             actor_critic=ac,
             value_loss_coef = self.args.value_loss_coef,
             entropy_coef = self.args.entropy_coef,
@@ -136,30 +235,7 @@ class ContinualLearner:
             context_window=None ## make an arg??
         )
 
-        self.storage = CustomOnlineStorage(
-                    self.rollout_len, 
-                    self.num_processes, 
-                    self.envs.observation_space.shape[0]+1, 
-                    0, # what's this? 
-                    0, # what's this?
-                    self.envs.action_space, 
-                    self.agent.actor_critic.encoder.hidden_size, 
-                    self.agent.actor_critic.encoder.latent_dim, 
-                    self.normalise_rewards # normalise rewards for policy - set to true, but implement
-                )
-        
-        self.quantiles = quantiles
-        self.log_dir = log_dir
-        ## TODO: perhaps pass the RL2 params to the logger to log?
-        self.logger = CustomLogger(self.log_dir, self.quantiles, args = self.args)
-        self.log_every = log_every
-
-        # # calculate number of updates and keep count of frames/iterations
-        # self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
-        # self.frames = 0
-        # self.iter_idx = -1
-
-
+        return agent, init_args
     def train(self):
         """ Main Training loop """
         start_time = time.time() # use this in logger?
@@ -203,9 +279,7 @@ class ContinualLearner:
                 # if all(done):
                 #     hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
                 with torch.no_grad():
-                    # _, latent_mean, latent_logvar, hidden_state = self.agent.actor_critic.encoder(
-                    #     action, next_obs, reward, hidden_state, return_prior = False)
-                    # latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)[None,:]
+
                     latent, hidden_state = self.agent.get_latent(
                         action, next_obs, rew_raw, hidden_state, return_prior = False
                     )
@@ -259,7 +333,10 @@ class ContinualLearner:
 
 
             ## Update
-            value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
+            if self.args.algorithm != 'right_only':
+                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
+            else:
+                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = np.nan, np.nan, np.nan, np.nan
 
             ## log training loss
             self.logger.add_tensorboard('value_loss', value_loss_epoch, eps)

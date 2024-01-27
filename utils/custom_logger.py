@@ -10,13 +10,14 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class CustomLogger:
-    def __init__(self, log_dir,  logging_quantiles, args = None):
+    def __init__(self, log_dir,  logging_quantiles, args = None, base_network_args = None):
 
         self.args = args
+        self.base_network_args = base_network_args
 
         self.log_dir = os.path.join(
             log_dir,
-            'CL' + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
+            'CL' + '_' + self.args.algorithm + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
         )
 
         self.csv_dir = self.log_dir + '/results.csv'
@@ -39,16 +40,18 @@ class CustomLogger:
 
         ### save out args if supplied to continual learner - otherwise ignore
         if self.args is not None:
+
             self.args.log_dir = self.log_dir
-            with open(os.path.join(self.log_dir, 'config.json'), 'w') as f:
-                try:
-                    config = {k: v for (k, v) in vars(self.args).items() if k != 'device'}
-                except:
-                    config = self.args
-                config.update(device=device.type)
-                json.dump(config, f, indent=2)
+            self.log_args(self.args, os.path.join(self.log_dir, 'config.json'))
         else:
             print('no args supplied...')
+
+        ### save out network args if supplied to continual learner - otherwise ignore
+        if self.base_network_args is not None:
+
+            self.log_args(self.base_network_args, os.path.join(self.log_dir,'base_network_config.json'))
+        else:
+            print('no base network args supplied...')
 
     def add_tensorboard(self, name, value, x_pos):
         self.writer.add_scalar(name, value, x_pos)
@@ -65,4 +68,14 @@ class CustomLogger:
             )
     def save_network(self, network):
         torch.save(network, self.network_dir)
+
+    def log_args(self, args, path):
+        
+        with open(os.path.join(path), 'w') as f:
+            try:
+                config = {k: v for (k, v) in vars(args).items() if k != 'device'}
+            except:
+                config = args
+            config.update(device=device.type)
+            json.dump(config, f, indent=2)
 
