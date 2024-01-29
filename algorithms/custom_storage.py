@@ -261,9 +261,8 @@ class CustomOnlineStorage(object):
             mini_batch_size,
             drop_last=True)
         for indices in sampler:
-            ## TODO: maybe add state back in because the policy settings will handle the state anyway
+
             state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            # state_batch = None # for RL2 don't pass state to policy as it goes through encoder
             cat_latent = torch.cat(self.latent[:-1])
             latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
             actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]

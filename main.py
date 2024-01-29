@@ -11,20 +11,7 @@ import torch
 
 # get configs
 from config.metaworld_config import \
-    args_ML10_rl2, args_CustomML10_rl2, args_ML1_rl2
-from config.gridworld import \
-    args_grid_belief_oracle, args_grid_rl2, args_grid_varibad
-from config.pointrobot import \
-    args_pointrobot_multitask, args_pointrobot_varibad, args_pointrobot_rl2, args_pointrobot_humplik
-from config.mujoco import \
-    args_cheetah_dir_multitask, args_cheetah_dir_expert, args_cheetah_dir_rl2, args_cheetah_dir_varibad, \
-    args_cheetah_vel_multitask, args_cheetah_vel_expert, args_cheetah_vel_rl2, args_cheetah_vel_varibad, \
-    args_cheetah_vel_avg, \
-    args_ant_dir_multitask, args_ant_dir_expert, args_ant_dir_rl2, args_ant_dir_varibad, \
-    args_ant_goal_multitask, args_ant_goal_expert, args_ant_goal_rl2, args_ant_goal_varibad, \
-    args_ant_goal_humplik, \
-    args_walker_multitask, args_walker_expert, args_walker_avg, args_walker_rl2, args_walker_varibad, \
-    args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert
+    args_ML10_rl2, args_CustomML10_rl2, args_ML1_rl2, args_CustomML10_varibad
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
 from metalearner import MetaLearner
@@ -45,6 +32,9 @@ def main():
         # --- MetaWorld ---
         if env == 'ML10_rl2':
             args = args_ML10_rl2.get_args(rest_args)
+            assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
+        elif env == 'CustomML10_varibad':
+            args = args_CustomML10_varibad.get_args(rest_args)
             assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
         elif env == 'CustomML10_rl2':
             args = args_CustomML10_rl2.get_args(rest_args)

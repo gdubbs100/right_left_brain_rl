@@ -19,8 +19,8 @@ class CustomML10Env(gym.Env):
         self._max_episode_steps = 500
 
     def set_benchmark_task(self, _task_id):
-        task_id = _task_id % self.num_tasks
-        self.env_name = self.task_names[task_id]
+        self.task_id = _task_id % self.num_tasks
+        self.env_name = self.task_names[self.task_id]
         self.env_cls = self.benchmark.train_classes[self.env_name]
         self.env = self.env_cls()
         self.observation_space = self.env.observation_space
@@ -37,7 +37,10 @@ class CustomML10Env(gym.Env):
         return obs
     
     def get_task(self):
-        return self.env_name, self.env_cls
+        return self.task_id
+    
+    # def get_task(self):
+    #     return self.env_name, self.env_cls
     
     ## reset_task is automatically created in make_env using set_task
     def set_task(self, task = None):

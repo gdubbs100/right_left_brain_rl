@@ -26,7 +26,7 @@ def main():
     ## num processes and env steps
     parser.add_argument('--steps_per_env', type=int, default=1e6, help="Number of steps each environment is trained on. CW uses 1m")
     parser.add_argument('--rollout_len', type=int, default=500, help="rollout len for each episode. MW default is 500")
-    parser.add_argument('--num_processes', type=int, default = 20, help="number of parallel processes to run - effectively controls batch size as one update is run per each episode x num_processes")
+    parser.add_argument('--num_processes', type=int, default=20, help="number of parallel processes to run - effectively controls batch size as one update is run per each episode x num_processes")
     parser.add_argument('--randomization', type=str, default='deterministic', help='randomisation setting for CW must be one of: deterministic, random_init_all, random_init_fixed20, random_init_small_box')
 
     ## TODO: Add algorithm specific params - for bicameral mainly
@@ -70,8 +70,7 @@ def main():
     ## run continual learner
     continual_learner = ContinualLearner(
         args.seed, 
-        tasks, 
-        # agent, 
+        tasks,  
         args.num_processes,
         args.rollout_len,
         effective_steps_per_env,
