@@ -43,6 +43,7 @@ class ContinualLearner:
 
         ## TODO: set a seed, look at below function
         utl.seed(seed, False)
+        self.seed = seed
 
         self.gamma = gamma
         self.tau = tau
@@ -50,19 +51,27 @@ class ContinualLearner:
 
         ## initialise the envs
         self.raw_train_envs = prepare_base_envs(task_names, randomization=randomization)
-        self.task_names = np.unique(task_names)
-        self.env_id_to_name = {(i+1):env.name for i, env in enumerate(self.raw_train_envs)}
+
+        ## get unique task names in order:
+        _, idx = np.unique(task_names, return_index=True)
+        self.task_names = [task_names[i] for i in np.sort(idx)]
+
+        self.env_id_to_name = {(i+1):task for i, task in enumerate(self.task_names)}
         self.envs = prepare_parallel_envs(
             envs = self.raw_train_envs,
             steps_per_env=steps_per_env,
             num_processes=num_processes,
+            seed = self.seed,
             gamma=self.gamma,
             normalise_rew=self.normalise_rewards,
             device=device
         )
 
         # only eval on unique envs
-        self.raw_test_envs = prepare_base_envs(self.task_names, randomization=randomization)
+        self.raw_test_envs = prepare_base_envs(
+            self.task_names, 
+            randomization=randomization
+        )
 
         # set params for runs
         self.num_processes = num_processes
@@ -160,7 +169,7 @@ class ContinualLearner:
             num_mini_batch=self.args.num_mini_batch,
             use_huber_loss = self.args.use_huberloss,
             use_clipped_value_loss=self.args.use_clipped_value_loss,
-            context_window=None ## make an arg??
+            context_window=args.context_window
         )
 
         return agent, init_args
@@ -175,8 +184,7 @@ class ContinualLearner:
 
             step = 0
             obs = self.envs.reset() # we reset all at once as metaworld is time limited
-            current_task = self.envs.get_env_attr("cur_seq_idx") # perhaps sort out dictionary mapping for name / task id
-            episode_reward = []
+            current_task = self.envs.get_env_attr("cur_seq_idx") 
             done = [False for _ in range(self.num_processes)]
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
@@ -194,8 +202,6 @@ class ContinualLearner:
 
                 next_obs, (rew_raw, rew_normalised), done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
-
-                episode_reward.append(rew_raw)
 
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
@@ -267,19 +273,21 @@ class ContinualLearner:
             else:
                 value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = np.nan, np.nan, np.nan, np.nan
 
+            ## calculate environment steps 
+            frames = (eps+1) * self.num_processes * self.rollout_len
             ## log training loss
-            self.logger.add_tensorboard('value_loss', value_loss_epoch, eps)
-            self.logger.add_tensorboard('action_loss', action_loss_epoch, eps)
-            self.logger.add_tensorboard('entropy_loss', dist_entropy_epoch, eps)
-            self.logger.add_tensorboard('total_loss', loss_epoch, eps)
-            self.logger.add_tensorboard('current_task', current_task, eps)
+            self.logger.add_tensorboard('value_loss', value_loss_epoch, frames)
+            self.logger.add_tensorboard('action_loss', action_loss_epoch, frames)
+            self.logger.add_tensorboard('entropy_loss', dist_entropy_epoch, frames)
+            self.logger.add_tensorboard('total_loss', loss_epoch, frames)
+            self.logger.add_tensorboard('current_task', current_task, frames)
 
             # clears out old data
             self.storage.after_update()
 
             if (eps+1) % self.log_every == 0:
-                print(f"Evaluating at Episode: {eps}")
-                self.evaluate(current_task, eps)
+                print(f"Evaluating at Update: {eps}, with {frames} frames")
+                self.evaluate(current_task, frames)
 
                 ## save the network
                 self.logger.save_network(self.agent.actor_critic)
@@ -299,17 +307,19 @@ class ContinualLearner:
             steps_per_env=self.rollout_len,
             num_processes=test_processes,
             gamma=self.gamma,
+            seed = self.seed,
             normalise_rew=self.normalise_rewards,
-            device=device
+            device=device,
+            rank_offset=self.num_processes+1
         )
 
         # record outputs
         task_rewards = {
-            task_name: [] for task_name in self.task_names
+            env.name: [] for env in self.raw_test_envs
         }
 
         task_successes = {
-            task_name: [] for task_name in self.task_names
+            env.name: [] for env in self.raw_test_envs
         }
 
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
@@ -333,8 +343,6 @@ class ContinualLearner:
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
 
-                obs = next_obs
-
                 ## combine all rewards
                 episode_reward.append(rew_raw)
                 # if we succeed at all then the task is successful
@@ -342,14 +350,16 @@ class ContinualLearner:
 
                 with torch.no_grad():
                     latent, hidden_state = self.agent.get_latent(
-                    action, obs, rew_raw, hidden_state, return_prior = False
+                    action, next_obs, rew_raw, hidden_state, return_prior = False
                     )
                     latent = latent[None, :]
+
+                obs = next_obs
 
             ## log the results here
             task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
             task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].sum()
-
+  
         end_time = time.time()
         self.logger.add_tensorboard('current_task', current_task, eps)
 
@@ -360,7 +370,7 @@ class ContinualLearner:
 
         # log reward quantiles, successes to csv
         # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
-        for task in self.task_names:
+        for task in task_rewards.keys():
             reward_quantiles = torch.quantile(
                 task_rewards[task],
                 torch.tensor(self.quantiles)

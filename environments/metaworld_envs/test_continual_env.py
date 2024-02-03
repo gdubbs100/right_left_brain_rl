@@ -37,6 +37,8 @@ class ContinualEnv(gym.Env):
         obs, reward, terminated, truncated, info = self.envs[self.cur_seq_idx].step(action)
         done = terminated or truncated
         info["seq_idx"] = self.cur_seq_idx
+        info["env_name"] = self.envs[self.cur_seq_idx].name
+        info["env"] = repr(self.envs[self.cur_seq_idx].unwrapped)
 
         self.cur_step += 1
         if self.cur_step % self.steps_per_env == 0:
@@ -46,8 +48,8 @@ class ContinualEnv(gym.Env):
             self.cur_seq_idx += 1
 
         ## add done flag
-        to_append = 1 if done else 0
-        obs = np.concatenate((obs, [0.0]))
+        to_append = 1.0 if done else 0.0
+        obs = np.concatenate((obs, [to_append]))
 
         return obs, reward, done, info
 

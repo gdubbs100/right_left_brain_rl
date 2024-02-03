@@ -12,9 +12,12 @@ from environments.env_utils.vec_env.subproc_vec_env import SubprocVecEnv
 from environments.env_utils.vec_env.custom_vec_normalize import CustomVecNormalize
 
 
-def make_continual_env(env_id, **kwargs):
+def make_continual_env(env_id, seed, rank, **kwargs):
     def _thunk():
+
         env = gym.make(env_id, **kwargs)
+        if seed is not None:
+            env.seed(seed + rank)
         return env
     return _thunk
 
@@ -39,9 +42,13 @@ def prepare_base_envs(task_names, benchmark = MT50, task_set = 'train', randomiz
         envs.append(env)
     return envs
 
-def prepare_parallel_envs(envs, steps_per_env, num_processes, gamma, normalise_rew, device):
+def prepare_parallel_envs(envs, steps_per_env, num_processes, seed, gamma, normalise_rew, device,rank_offset = 0):
     subproc_envs = SubprocVecEnv(
-        [make_continual_env('continualMW-v0', **{'envs' : envs, 'steps_per_env': steps_per_env}) for _ in range(num_processes)]
+        [make_continual_env(
+            'continualMW-v0', 
+            seed,
+            rank_offset + i,
+            **{'envs' : envs, 'steps_per_env': steps_per_env}) for i in range(num_processes)]
     )
 
     # returns tuple of (reward, norm_reward) if normalise_rew, (reward, reward) otherwise
