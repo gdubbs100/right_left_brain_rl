@@ -21,9 +21,9 @@ class CustomOnlineStorage(object):
                  num_steps, num_processes,
                  state_dim, belief_dim, task_dim,
                  action_space,
-                 hidden_size, latent_dim, normalise_rewards):
+                 hidden_size, latent_dim, normalise_rewards
+                ):
 
-        # self.args = args
         self.state_dim = state_dim
         self.belief_dim = belief_dim
         self.task_dim = task_dim
@@ -41,9 +41,6 @@ class CustomOnlineStorage(object):
 
         self.latent_dim = latent_dim
         self.latent = []
-        # self.latent_samples = []
-        # self.latent_mean = []
-        # self.latent_logvar = []
         # hidden states of RNN (necessary if we want to re-compute embeddings)
         self.hidden_size = hidden_size
         ## TODO: this is why we have double zeros at the start...
@@ -55,40 +52,12 @@ class CustomOnlineStorage(object):
         # next_state will include s_N when state was reset, skipping s_0
         # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
         self.next_state = torch.zeros(num_steps, num_processes, state_dim)
-        # if self.args.pass_latent_to_policy:
-        #     # latent variables (of VAE)
-        #     self.latent_dim = latent_dim
-        #     self.latent_samples = []
-        #     self.latent_mean = []
-        #     self.latent_logvar = []
-        #     # hidden states of RNN (necessary if we want to re-compute embeddings)
-        #     self.hidden_size = hidden_size
-        #     self.hidden_states = torch.zeros(num_steps + 1, num_processes, hidden_size)
-        #     # next_state will include s_N when state was reset, skipping s_0
-        #     # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
-        #     self.next_state = torch.zeros(num_steps, num_processes, state_dim)
-
-        # else:
-        #     self.latent_mean = None
-        #     self.latent_logvar = None
-        #     self.latent_samples = None
-        # if self.args.pass_belief_to_policy:
-        #     self.beliefs = torch.zeros(num_steps + 1, num_processes, belief_dim)
-        # else:
-        #     self.beliefs = None
-        # if self.args.pass_task_to_policy:
-        #     self.tasks = torch.zeros(num_steps + 1, num_processes, task_dim)
-        # else:
-        #     self.tasks = None
 
         # rewards and end of episodes
         self.rewards_raw = torch.zeros(num_steps, num_processes, 1)
         self.rewards_normalised = torch.zeros(num_steps, num_processes, 1)
         self.done = torch.zeros(num_steps + 1, num_processes, 1)
         self.masks = torch.ones(num_steps + 1, num_processes, 1)
-        # masks that indicate whether it's a true terminal state (false) or time limit end state (true)
-        ## for metaworld its not clear if this is required
-        self.bad_masks = torch.ones(num_steps + 1, num_processes, 1)
 
         # actions
         if action_space.__class__.__name__ == 'Discrete':
@@ -110,30 +79,12 @@ class CustomOnlineStorage(object):
 
         self.prev_state = self.prev_state.to(device)
         self.latent = [t.to(device) for t in self.latent]
-        # self.latent_samples = [t.to(device) for t in self.latent_samples]
-        # self.latent_mean = [t.to(device) for t in self.latent_mean]
-        # self.latent_logvar = [t.to(device) for t in self.latent_logvar]
         self.hidden_states = self.hidden_states.to(device)
         self.next_state = self.next_state.to(device)
-
-
-        # if self.args.pass_state_to_policy:
-        #     self.prev_state = self.prev_state.to(device)
-        # if self.args.pass_latent_to_policy:
-        #     self.latent_samples = [t.to(device) for t in self.latent_samples]
-        #     self.latent_mean = [t.to(device) for t in self.latent_mean]
-        #     self.latent_logvar = [t.to(device) for t in self.latent_logvar]
-        #     self.hidden_states = self.hidden_states.to(device)
-        #     self.next_state = self.next_state.to(device)
-        # if self.args.pass_belief_to_policy:
-        #     self.beliefs = self.beliefs.to(device)
-        # if self.args.pass_task_to_policy:
-        #     self.tasks = self.tasks.to(device)
         self.rewards_raw = self.rewards_raw.to(device)
         self.rewards_normalised = self.rewards_normalised.to(device)
         self.done = self.done.to(device)
         self.masks = self.masks.to(device)
-        self.bad_masks = self.bad_masks.to(device)
         self.value_preds = self.value_preds.to(device)
         self.returns = self.returns.to(device)
         self.actions = self.actions.to(device)
@@ -147,14 +98,12 @@ class CustomOnlineStorage(object):
                rewards_normalised,
                value_preds,
                masks,
-               bad_masks,
                done,
                hidden_states=None,
                latent = None
                ):
         self.prev_state[self.step + 1].copy_(state)
         self.latent.append(latent.detach().clone())
-        ##TODO: what is going on here? why step+1?
         self.hidden_states[self.step+1].copy_(hidden_states.detach())
 
         self.actions[self.step] = actions.detach().clone()
@@ -165,7 +114,6 @@ class CustomOnlineStorage(object):
         else:
             self.value_preds[self.step].copy_(value_preds.detach())
         self.masks[self.step + 1].copy_(masks)
-        self.bad_masks[self.step + 1].copy_(bad_masks)
         self.done[self.step + 1].copy_(done)
         self.step = (self.step + 1) % self.num_steps
 
@@ -177,7 +125,6 @@ class CustomOnlineStorage(object):
         self.hidden_states[0].copy_(torch.zeros_like(self.hidden_states[-1]))
         self.done[0].copy_(torch.zeros_like(self.done[-1]))
         self.masks[0].copy_(torch.zeros_like(self.masks[-1]))
-        self.bad_masks[0].copy_(torch.zeros_like(self.bad_masks[-1]))
         self.action_log_probs = None
 
     def compute_returns(self, next_value, use_gae, gamma, tau, use_proper_time_limits=True):
@@ -194,6 +141,8 @@ class CustomOnlineStorage(object):
     def _compute_returns(self, next_value, rewards, value_preds, returns, gamma, tau, use_gae, use_proper_time_limits):
 
         if use_proper_time_limits:
+            ## don't want to use this at all
+            raise NotImplementedError
             if use_gae:
                 value_preds[-1] = next_value
                 gae = 0
@@ -222,18 +171,9 @@ class CustomOnlineStorage(object):
 
     def num_transitions(self):
         return len(self.prev_state) * self.num_processes
-    ### TODO: update as appropriate
+    
     def before_update(self, policy):
         # this is about building the computation graph during training
-        # latent = utl.get_latent_for_policy(self.args,
-        #                                    latent_sample=torch.stack(
-        #                                        self.latent_samples[:-1]) if self.latent_samples is not None else None,
-        #                                    latent_mean=torch.stack(
-        #                                        self.latent_mean[:-1]) if self.latent_mean is not None else None,
-        #                                    latent_logvar=torch.stack(
-        #                                        self.latent_logvar[:-1]) if self.latent_mean is not None else None)
-        # might need to update this for combined policy /
-        ## strange  #torch.stack(self.latent[:-1]), gets odd dims with vectorised envs use torch.cat instead
         _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
                                                          torch.cat(self.latent[:-1]),
                                                          None,
@@ -280,3 +220,235 @@ class CustomOnlineStorage(object):
                   value_preds_batch, return_batch, old_action_log_probs_batch, adv_targ
             
 
+class BiHemOnlineStorage(object):
+    def __init__(self,
+                 num_steps, num_processes,
+                 state_dim, belief_dim, task_dim,
+                 action_space,
+                 left_hidden_size, right_hidden_size,
+                 left_latent_dim, right_latent_dim,
+                 normalise_rewards
+                ):
+
+        self.state_dim = state_dim
+        self.belief_dim = belief_dim
+        self.task_dim = task_dim
+
+        self.num_steps = num_steps  # how many steps to do per update (= size of online buffer)
+        self.num_processes = num_processes  # number of parallel processes
+        self.step = 0  # keep track of current environment step
+
+        # normalisation of the rewards
+        self.normalise_rewards = normalise_rewards
+
+        # inputs to the policy
+        # this will include s_0 when state was reset (hence num_steps+1)
+        self.prev_state = torch.zeros(num_steps + 1, num_processes, state_dim)
+
+        self.left_latent_dim = left_latent_dim
+        self.right_latent_dim = right_latent_dim
+        self.left_latent = []
+        self.right_latent = []
+        # hidden states of RNN (necessary if we want to re-compute embeddings)
+        self.left_hidden_size = left_hidden_size
+        self.right_hidden_size = right_hidden_size
+
+        self.left_hidden_states = torch.zeros(num_steps + 1, num_processes, left_hidden_size)
+        self.right_hidden_states = torch.zeros(num_steps + 1, num_processes, right_hidden_size)
+
+        self.beliefs = None
+        self.tasks = None
+        # next_state will include s_N when state was reset, skipping s_0
+        # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
+        self.next_state = torch.zeros(num_steps, num_processes, state_dim)
+
+        # rewards and end of episodes
+        self.rewards_raw = torch.zeros(num_steps, num_processes, 1)
+        self.rewards_normalised = torch.zeros(num_steps, num_processes, 1)
+        self.done = torch.zeros(num_steps + 1, num_processes, 1)
+        self.masks = torch.ones(num_steps + 1, num_processes, 1)
+
+        # actions
+        if action_space.__class__.__name__ == 'Discrete':
+            action_shape = 1
+        else:
+            action_shape = action_space.shape[0]
+        self.actions = torch.zeros(num_steps, num_processes, action_shape)
+        if action_space.__class__.__name__ == 'Discrete':
+            self.actions = self.actions.long()
+        self.action_log_probs = None
+
+        # values and returns
+        self.value_preds = torch.zeros(num_steps + 1, num_processes, 1)
+        self.returns = torch.zeros(num_steps + 1, num_processes, 1)
+
+        self.to_device()
+
+    def to_device(self, device = device):
+
+        self.prev_state = self.prev_state.to(device)
+        self.left_latent = [t.to(device) for t in self.left_latent]
+        self.right_latent = [t.to(device) for t in self.right_latent]
+        self.left_hidden_states = self.left_hidden_states.to(device)
+        self.right_hidden_states = self.right_hidden_states.to(device)
+        self.next_state = self.next_state.to(device)
+        self.rewards_raw = self.rewards_raw.to(device)
+        self.rewards_normalised = self.rewards_normalised.to(device)
+        self.done = self.done.to(device)
+        self.masks = self.masks.to(device)
+        self.value_preds = self.value_preds.to(device)
+        self.returns = self.returns.to(device)
+        self.actions = self.actions.to(device)
+
+    def insert(self,
+               state,
+               belief,
+               task,
+               actions,
+               rewards_raw,
+               rewards_normalised,
+               value_preds,
+               masks,
+               done,
+               hidden_states=None,
+               latent = None
+               ):
+        self.prev_state[self.step + 1].copy_(state)
+
+        ## handle latents:
+        if isinstance(latent, tuple):
+            left_latent = latent[0]
+            right_latent = latent[1]
+        else:
+            raise ValueError
+        self.left_latent.append(left_latent.detach().clone())
+        self.right_latent.append(right_latent.detach().clone())
+
+        ## handle hidden_states
+        if isinstance(hidden_states, tuple):
+            left_hidden_states = hidden_states[0].squeeze()
+            right_hidden_states = hidden_states[1].squeeze()
+        else:
+            raise ValueError
+        self.left_hidden_states[self.step+1].copy_(left_hidden_states.detach())
+        self.right_hidden_states[self.step+1].copy_(right_hidden_states.detach())
+
+        ## rest of the inputs
+        self.actions[self.step] = actions.detach().clone()
+        self.rewards_raw[self.step].copy_(rewards_raw)
+        self.rewards_normalised[self.step].copy_(rewards_normalised)
+        if isinstance(value_preds, list):
+            self.value_preds[self.step].copy_(value_preds[0].detach())
+        else:
+            self.value_preds[self.step].copy_(value_preds.detach())
+        self.masks[self.step + 1].copy_(masks)
+        self.done[self.step + 1].copy_(done)
+        self.step = (self.step + 1) % self.num_steps
+
+    def after_update(self):
+        ## TODO: should we copy the last state over? this is just an RL2 meta-training thing?
+        ## set to torch.zeros_like for now
+        self.prev_state[0].copy_(torch.zeros_like(self.prev_state[-1]))
+        self.left_latent = []
+        self.right_latent = []
+        self.left_hidden_states[0].copy_(torch.zeros_like(self.left_hidden_states[-1]))
+        self.right_hidden_states[0].copy_(torch.zeros_like(self.right_hidden_states[-1]))
+        self.done[0].copy_(torch.zeros_like(self.done[-1]))
+        self.masks[0].copy_(torch.zeros_like(self.masks[-1]))
+        self.action_log_probs = None
+
+    def compute_returns(self, next_value, use_gae, gamma, tau, use_proper_time_limits=True):
+
+        if self.normalise_rewards:
+            rewards = self.rewards_normalised.clone()
+        else:
+            rewards = self.rewards_raw.clone()
+
+        self._compute_returns(next_value=next_value, rewards=rewards, value_preds=self.value_preds,
+                              returns=self.returns,
+                              gamma=gamma, tau=tau, use_gae=use_gae, use_proper_time_limits=use_proper_time_limits)
+
+    def _compute_returns(self, next_value, rewards, value_preds, returns, gamma, tau, use_gae, use_proper_time_limits):
+
+        if use_proper_time_limits:
+            raise NotImplementedError
+            if use_gae:
+                value_preds[-1] = next_value
+                gae = 0
+                for step in reversed(range(rewards.size(0))):
+                    delta = rewards[step] + gamma * value_preds[step + 1] * self.masks[step + 1] - value_preds[step]
+                    gae = delta + gamma * tau * self.masks[step + 1] * gae
+                    gae = gae * self.bad_masks[step + 1]
+                    returns[step] = gae + value_preds[step]
+            else:
+                returns[-1] = next_value
+                for step in reversed(range(rewards.size(0))):
+                    returns[step] = (returns[step + 1] * gamma * self.masks[step + 1] + rewards[step]) * self.bad_masks[
+                        step + 1] + (1 - self.bad_masks[step + 1]) * value_preds[step]
+        else:
+            if use_gae:
+                value_preds[-1] = next_value
+                gae = 0
+                for step in reversed(range(rewards.size(0))):
+                    delta = rewards[step] + gamma * value_preds[step + 1] * self.masks[step + 1] - value_preds[step]
+                    gae = delta + gamma * tau * self.masks[step + 1] * gae
+                    returns[step] = gae + value_preds[step]
+            else:
+                returns[-1] = next_value
+                for step in reversed(range(rewards.size(0))):
+                    returns[step] = returns[step + 1] * gamma * self.masks[step + 1] + rewards[step]
+
+    def num_transitions(self):
+        return len(self.prev_state) * self.num_processes
+    
+    ## TODO: update this to work with bicameral agent
+    def before_update(self, policy):
+        # this is about building the computation graph during training
+        left_latent = torch.cat(self.storage.left_latent[:-1])
+        right_latent = torch.cat(self.storage.right_latent[:-1])
+        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
+                                                         (left_latent, right_latent),
+                                                         None,
+                                                         None,
+                                                         self.actions)
+        self.action_log_probs = action_log_probs.detach()
+
+    ## TODO: update this to work with bicameral agent
+    def feed_forward_generator(self,
+                               advantages,
+                               num_mini_batch=None,
+                               mini_batch_size=None):
+        num_steps, num_processes = self.rewards_raw.size()[0:2]
+        batch_size = num_processes * num_steps
+
+        if mini_batch_size is None:
+            assert batch_size >= num_mini_batch, (
+                "PPO requires the number of processes ({}) "
+                "* number of steps ({}) = {} "
+                "to be greater than or equal to the number of PPO mini batches ({})."
+                "".format(num_processes, num_steps, num_processes * num_steps,
+                          num_mini_batch))
+            mini_batch_size = batch_size // num_mini_batch
+        sampler = BatchSampler(
+            SubsetRandomSampler(range(batch_size)),
+            mini_batch_size,
+            drop_last=True)
+        for indices in sampler:
+
+            state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
+            cat_latent = torch.cat(self.latent[:-1])
+            latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
+            actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]
+
+            value_preds_batch = self.value_preds[:-1].reshape(-1, 1)[indices]
+            return_batch = self.returns[:-1].reshape(-1, 1)[indices]
+
+            old_action_log_probs_batch = self.action_log_probs.reshape(-1, 1)[indices]
+            if advantages is None:
+                adv_targ = None
+            else:
+                adv_targ = advantages.reshape(-1, 1)[indices]
+
+            yield state_batch, actions_batch, latent_batch, \
+                  value_preds_batch, return_batch, old_action_log_probs_batch, adv_targ
+            

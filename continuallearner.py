@@ -218,6 +218,7 @@ class ContinualLearner:
                     latent, hidden_state = self.agent.get_latent(
                         action, next_obs, rew_raw, hidden_state, return_prior = False
                     )
+                    ## TODO: handle this in get_latent function
                     # just keep this for now
                     latent = latent[None,:]
 
@@ -234,7 +235,6 @@ class ContinualLearner:
                     rewards_normalised=rew_normalised.squeeze(0),
                     value_preds=value.squeeze(0),
                     masks=masks_done.squeeze(0), 
-                    bad_masks=masks_done.squeeze(0), ## removed bad masks
                     done=torch.from_numpy(done)[:,None].float(),
                     hidden_states = hidden_state.squeeze(),
                     latent = latent,
@@ -310,7 +310,7 @@ class ContinualLearner:
             seed = self.seed,
             normalise_rew=self.normalise_rewards,
             device=device,
-            rank_offset=self.num_processes+1
+            rank_offset=self.num_processes+1 # avoids overwriting training temp files - can be disastrous!
         )
 
         # record outputs
@@ -352,6 +352,8 @@ class ContinualLearner:
                     latent, hidden_state = self.agent.get_latent(
                     action, next_obs, rew_raw, hidden_state, return_prior = False
                     )
+
+                    ## TODO: move into get_latent function
                     latent = latent[None, :]
 
                 obs = next_obs

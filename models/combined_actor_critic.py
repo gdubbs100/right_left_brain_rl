@@ -3,6 +3,9 @@ import torch.nn as nn
 from models.policy import FixedNormal
 from models.gating_network import GatingNetwork
 
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 class ActorCritic(nn.Module):
 
     def __init__(self, policy, encoder):
@@ -39,20 +42,35 @@ class BiCameralActorCritic(nn.Module):
         super().__init__()
         self.left_actor_critic = ActorCritic(left_policy, left_encoder)
         self.right_actor_critic = ActorCritic(right_policy, right_encoder)
+
+        ## TODO: make state dims a parameter
         self.gating_network = GatingNetwork(40 + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2)
 
+        ## TODO: make parameter 
         # placeholder for now
-        self.std = torch.tensor([0.5])
+        self.std = torch.tensor([0.5]).to(device)
     
-    def encoder(self, action, state, reward, hidden_state):
+    def encoder(self, action, state, reward, hidden_state, return_prior = False):
         if isinstance(hidden_state, tuple):
             left_hidden_state = hidden_state[0]
             right_hidden_state = hidden_state[1]
         else:
             raise ValueError
 
-        _, left_latent_mean, left_latent_logvar, left_hidden_state = self.left_actor_critic.encoder(action, state, reward, left_hidden_state)
-        _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(action, state, reward, right_hidden_state)
+        _, left_latent_mean, left_latent_logvar, left_hidden_state = self.left_actor_critic.encoder(
+            action, 
+            state, 
+            reward, 
+            left_hidden_state, 
+            return_prior = return_prior
+        )
+        _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(
+            action, 
+            state, 
+            reward, 
+            right_hidden_state, 
+            return_prior = return_prior
+        )
         ## TODO: add gating encoder?
         
         return (left_latent_mean, left_latent_logvar, left_hidden_state), (right_latent_mean, right_latent_logvar, right_hidden_state)
@@ -74,15 +92,19 @@ class BiCameralActorCritic(nn.Module):
             raise ValueError
         
         # get left hemisphere input to distribution
-        left_value, left_actor_features = self.left_actor_critic.policy(state=state, latent=left_latent, belief=belief, task=task)
+        left_value, left_actor_features = self.left_actor_critic.policy(
+            state=state, latent=left_latent, belief=belief, task=task
+        )
         left_action_mean = self.left_actor_critic.policy.dist.fc_mean(left_actor_features)
         
         # get right hemisphere input to distribution        
-        right_value, right_actor_features = self.right_actor_critic.policy(state=state, latent=right_latent, belief=belief, task=task)
+        right_value, right_actor_features = self.right_actor_critic.policy(
+            state=state, latent=right_latent, belief=belief, task=task
+        )
         right_action_mean = self.right_actor_critic.policy.dist.fc_mean(right_actor_features)
         
         # maybe gate network should take task? take combined latents and current state?
-        right_gate_value, left_gate_value = self.gating_network(state, latent)
+        right_gate_value, left_gate_value = self.gating_network(state, left_latent, right_latent)
 
         # combine action and value estimate
         combined_action_means = left_gate_value * left_action_mean + right_gate_value * right_action_mean
@@ -94,6 +116,7 @@ class BiCameralActorCritic(nn.Module):
             actions = dist.mean
         else:
             actions = dist.sample() ## assumes not deterministic
+        ## TODO: return gating values?
         return combined_values, actions, dist
     
     def act(self, state, latent, belief=None, task=None, deterministic=False):

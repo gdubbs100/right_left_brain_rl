@@ -1,19 +1,24 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+## consider adding an encoder to get gating network latent
 class GatingNetwork(nn.Module):
 
     def __init__(self, input_dims):
         super(GatingNetwork, self).__init__()
-        ## what will the input dim be? state_space + right_latent_dim*2 + left_latent_dim*2
+        ## input dim = state_space + right_latent_dim*2 + left_latent_dim*2
+        ## option to use state or latent?
         self.ff = nn.Linear(input_dims, 2)
 
-    def forward(self, state, latent):
-        if isinstance(latent, tuple):
-            left_latent = latent[0]
-            right_latent = latent[1]
-        else:
-            raise ValueError
+    def forward(self, state, left_latent, right_latent):
+        # if isinstance(latent, tuple):
+        #     left_latent = latent[0]
+        #     right_latent = latent[1]
+        # else:
+        #     raise ValueError
         inputs = torch.cat((left_latent, right_latent, state), dim=-1)
-        return torch.sigmoid(self.ff(inputs))
+        outputs = F.softmax(self.ff(inputs), dim=-1)
+        #left value, right value
+        return outputs[:,:,:1], outputs[:,:,1:]
 
