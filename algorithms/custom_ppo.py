@@ -231,6 +231,43 @@ class BiHemPPO:
         elif policy_optimiser == 'rmsprop':
             self.optimiser = optim.RMSprop(actor_critic.parameters(), lr=lr, eps=eps, alpha=0.99)
 
+    def calculate_loss_by_hemisphere(
+            self, 
+            values,
+            action_log_probs,
+            return_batch, 
+            old_action_log_probs_batch, 
+            value_preds_batch, 
+            adv_targ
+        ):
+
+
+        ratio = torch.exp(action_log_probs -
+                    old_action_log_probs_batch)
+        surr1 = ratio * adv_targ
+        surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        action_loss = -torch.min(surr1, surr2)#.mean()
+
+        if self.use_huber_loss and self.use_clipped_value_loss:
+            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
+                                                                                        self.clip_param)
+            value_losses = F.smooth_l1_loss(values, return_batch, reduction='none')
+            value_losses_clipped = F.smooth_l1_loss(value_pred_clipped, return_batch, reduction='none')
+            value_loss = 0.5 * torch.max(value_losses, value_losses_clipped)#.mean()
+        elif self.use_huber_loss:
+            value_loss = F.smooth_l1_loss(values, return_batch)
+        elif self.use_clipped_value_loss:
+            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
+                                                                                        self.clip_param)
+            value_losses = (values - return_batch).pow(2)
+            value_losses_clipped = (value_pred_clipped - return_batch).pow(2)
+            value_loss = 0.5 * torch.max(value_losses, value_losses_clipped)#.mean()
+        else:
+            value_loss = 0.5 * (return_batch - values).pow(2)#.mean()
+
+        ## not aggregated!
+        return action_loss, value_loss
+
     def update(self, policy_storage):
 
         # -- get action values --
@@ -262,35 +299,35 @@ class BiHemPPO:
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
                 # Reshape to do in a single forward pass for all steps
-                ## TODO: do this for left and right
-                ## perhaps create function that calcs loss for right / left, then combine the loss
-                values, action_log_probs, dist_entropy = \
-                    self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch,
+                (left_values, left_action_log_probs, left_entropy), \
+                (right_values, right_action_log_probs, right_entropy) = \
+                    self.actor_critic.evaluate_actions_by_hemisphere(state=state_batch, latent=latent_batch,
                                                        belief=None, task=None,
                                                        action=actions_batch)
                 
-                ratio = torch.exp(action_log_probs -
-                            old_action_log_probs_batch)
-                surr1 = ratio * adv_targ
-                surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
-                action_loss = -torch.min(surr1, surr2).mean()
+                ## call gating network to create computation graph for gating values
+                (left_gate_value, right_gate_value) = \
+                    self.actor_critic.gating_network(state_batch, latent_batch[0], latent_batch[1])
 
-                if self.use_huber_loss and self.use_clipped_value_loss:
-                    value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                                self.clip_param)
-                    value_losses = F.smooth_l1_loss(values, return_batch, reduction='none')
-                    value_losses_clipped = F.smooth_l1_loss(value_pred_clipped, return_batch, reduction='none')
-                    value_loss = 0.5 * torch.max(value_losses, value_losses_clipped).mean()
-                elif self.use_huber_loss:
-                    value_loss = F.smooth_l1_loss(values, return_batch)
-                elif self.use_clipped_value_loss:
-                    value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                                self.clip_param)
-                    value_losses = (values - return_batch).pow(2)
-                    value_losses_clipped = (value_pred_clipped - return_batch).pow(2)
-                    value_loss = 0.5 * torch.max(value_losses, value_losses_clipped).mean()
-                else:
-                    value_loss = 0.5 * (return_batch - values).pow(2).mean()
+                ## calculate loss by hemispheres
+                left_action_loss, left_value_loss = self.calculate_loss_by_hemisphere(
+                    left_values, left_action_log_probs, return_batch,
+                    old_action_log_probs_batch, value_preds_batch, adv_targ
+                )
+
+                right_action_loss, right_value_loss = self.calculate_loss_by_hemisphere(
+                    right_values, right_action_log_probs, return_batch,
+                    old_action_log_probs_batch, value_preds_batch, adv_targ
+                )
+
+                ## use MOE loss function - no losses so far have been aggregated prior to weighting
+                value_loss = \
+                    (left_gate_value * left_value_loss + right_gate_value + right_value_loss).mean()
+                
+                action_loss = \
+                    (left_gate_value * left_action_loss + right_gate_value + right_action_loss).mean()
+                
+                dist_entropy = (left_gate_value * left_entropy + right_gate_value * right_entropy).mean()
 
                 # zero out the gradients
                 self.optimiser.zero_grad()
@@ -353,35 +390,49 @@ class BiHemPPO:
     ## This is a bit inconsistent with the rest of the getting of latents and stuff
     ## TODO: need to figure out how to do this for right / left
     def _recompute_embeddings(self, policy_storage, sample, update_idx, detach_every):
-        latent = [policy_storage.latent[0].detach().clone()]
-        latent[0].requires_grad = True
+        left_latent = [policy_storage.left_latent[0].detach().clone()]
+        left_latent[0].requires_grad = True
 
-        h = policy_storage.hidden_states[0].detach()
+        right_latent = [policy_storage.right_latent[0].detach().clone()]
+        ## we don't want the right latent to have a grad!!
+        ## may still need to do more - e.g. freeze the weights of the right network
+        # right_latent[0].requires_grad = True
+
+        left_h = policy_storage.left_hidden_states[0].detach()
+        right_h = policy_storage.right_hidden_states[0].detach()
         for i in range(policy_storage.actions.shape[0]):
             # reset hidden state of the GRU when we reset the task
-            h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i])
+            left_h = self.actor_critic.left_actor_critic.encoder.reset_hidden(left_h, policy_storage.done[i])
+            right_h = self.actor_critic.right_actor_critic.encoder.reset_hidden(right_h, policy_storage.done[i])
             # not sure why this is i + 1?
             # h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i + 1])
 
-            _, tm, tl, h = self.actor_critic.encoder(
+            left, right = self.actor_critic.encoder(
                 policy_storage.actions.float()[i:i + 1],
                 policy_storage.next_state[i:i + 1],
                 policy_storage.rewards_raw[i:i + 1],
-                h,
+                (left_h, right_h),
                 sample=sample,
                 return_prior=False,
                 detach_every=detach_every
             )
+            left_h, right_h = left[-1], right[-1]
+
 
             ## apply the nonlinearity manually
-            latent.append(F.relu(torch.cat((tm, tl), dim = -1)[None,:]))
+            left_latent.append(F.relu(torch.cat((left[0], left[1]), dim = -1)[None,:]))
+            right_latent.append(F.relu(torch.cat((right[0], right[1]), dim = -1)[None,:]))
 
         if update_idx == 0:
             try:
-                assert (torch.cat(policy_storage.latent) - torch.cat(latent)).sum() == 0
+                assert (torch.cat(policy_storage.left_latent) - torch.cat(left_latent)).sum() == 0
+                assert (torch.cat(policy_storage.right_latent) - torch.cat(right_latent)).sum() == 0
 
             except AssertionError:
                 warnings.warn('You are not recomputing the embeddings correctly!')
-
         
-        policy_storage.latent = latent
+        policy_storage.left_latent = left_latent
+        ## probably don't need to do this as we are not attaching gradients to the right...
+        policy_storage.right_latent = right_latent
+
+

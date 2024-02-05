@@ -401,11 +401,10 @@ class BiHemOnlineStorage(object):
     def num_transitions(self):
         return len(self.prev_state) * self.num_processes
     
-    ## TODO: update this to work with bicameral agent
     def before_update(self, policy):
         # this is about building the computation graph during training
-        left_latent = torch.cat(self.storage.left_latent[:-1])
-        right_latent = torch.cat(self.storage.right_latent[:-1])
+        left_latent = torch.cat(self.left_latent[:-1])
+        right_latent = torch.cat(self.right_latent[:-1])
         _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
                                                          (left_latent, right_latent),
                                                          None,
@@ -436,8 +435,13 @@ class BiHemOnlineStorage(object):
         for indices in sampler:
 
             state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            cat_latent = torch.cat(self.latent[:-1])
-            latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
+            # cat_latent = torch.cat(self.latent[:-1])
+            # latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
+            left_latent = torch.cat(self.left_latent[:-1])
+            left_latent_batch = left_latent.reshape(-1, *left_latent.size()[2:])[indices]
+
+            right_latent = torch.cat(self.right_latent[:-1])
+            right_latent_batch = right_latent.reshape(-1, *right_latent.size()[2:])[indices]
             actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]
 
             value_preds_batch = self.value_preds[:-1].reshape(-1, 1)[indices]
@@ -449,6 +453,6 @@ class BiHemOnlineStorage(object):
             else:
                 adv_targ = advantages.reshape(-1, 1)[indices]
 
-            yield state_batch, actions_batch, latent_batch, \
+            yield state_batch, actions_batch, (left_latent_batch, right_latent_batch), \
                   value_preds_batch, return_batch, old_action_log_probs_batch, adv_targ
             

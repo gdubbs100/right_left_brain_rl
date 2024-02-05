@@ -20,5 +20,5 @@ class GatingNetwork(nn.Module):
         inputs = torch.cat((left_latent, right_latent, state), dim=-1)
         outputs = F.softmax(self.ff(inputs), dim=-1)
         #left value, right value
-        return outputs[:,:,:1], outputs[:,:,1:]
+        return outputs[...,:1], outputs[...,1:]
 

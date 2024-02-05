@@ -50,7 +50,7 @@ class BiCameralActorCritic(nn.Module):
         # placeholder for now
         self.std = torch.tensor([0.5]).to(device)
     
-    def encoder(self, action, state, reward, hidden_state, return_prior = False):
+    def encoder(self, action, state, reward, hidden_state, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
             left_hidden_state = hidden_state[0]
             right_hidden_state = hidden_state[1]
@@ -62,14 +62,18 @@ class BiCameralActorCritic(nn.Module):
             state, 
             reward, 
             left_hidden_state, 
-            return_prior = return_prior
+            return_prior = return_prior,
+            sample = sample,
+            detach_every=detach_every
         )
         _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(
             action, 
             state, 
             reward, 
             right_hidden_state, 
-            return_prior = return_prior
+            return_prior = return_prior,
+            sample = sample,
+            detach_every=detach_every
         )
         ## TODO: add gating encoder?
         
@@ -133,15 +137,22 @@ class BiCameralActorCritic(nn.Module):
         """
         values, _, dist = self.policy(state, latent, None, None)
         action_log_probs = dist.log_probs(action)
-        dist_entropy = dist.entropy().mean()
+        dist_entropy = dist.entropy()#.mean()
         return values, action_log_probs, dist_entropy
 
     def evaluate_actions_by_hemisphere(self, state, latent, belief, task, action):
         """Call policy eval, set task, belief to None"""
+        if isinstance(latent, tuple):
+            left_latent = latent[0]
+            right_latent = latent[1]
+        else:
+            raise ValueError
 
         ## get left v, log_probs, entropy
-        left_value, left_logprobs, left_entropy = self.left_actor_critic.evaluate_actions(state, latent, None, None, action)
+        left_value, left_logprobs, left_entropy = self.left_actor_critic\
+            .evaluate_actions(state, left_latent, None, None, action)
         ## get right value, log_probs, entropy
-        right_value, right_logprobs, right_entropy = self.right_actor_critic.evaluate_actions(state, latent, None, None, action)
+        right_value, right_logprobs, right_entropy = self.right_actor_critic\
+            .evaluate_actions(state, right_latent, None, None, action)
 
         return (left_value, left_logprobs, left_entropy), (right_value, right_logprobs, right_entropy)
