@@ -176,7 +176,7 @@ class ContinualLearner:
     
     def train(self):
         """ Main Training loop """
-        start_time = time.time() # use this in logger?
+        start_time = time.time() 
         eps = 0
 
         # steps limit is parameter for whole continual env
@@ -184,7 +184,10 @@ class ContinualLearner:
 
             step = 0
             obs = self.envs.reset() # we reset all at once as metaworld is time limited
-            current_task = self.envs.get_env_attr("cur_seq_idx") 
+            current_task = self.envs.get_env_attr("cur_seq_idx")
+            episode_reward = []
+            successes = []
+            gating_values = []
             done = [False for _ in range(self.num_processes)]
 
             ## TODO: determine how frequently to get prior - do at start of each episode for now
@@ -193,26 +196,34 @@ class ContinualLearner:
                 latent, hidden_state = self.agent.get_prior(self.num_processes)
                 assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
-                self.storage.hidden_states[:1].copy_(hidden_state)
-                self.storage.latent.append(latent)
+                if self.args.algorithm == 'bicameral':
+                    self.storage.left_hidden_states[:1].copy_(hidden_state[0])
+                    self.storage.right_hidden_states[:1].copy_(hidden_state[1])
+                    self.storage.left_latent.append(latent[0])
+                    self.storage.right_latent.append(latent[1])
+                else:
+                    self.storage.hidden_states[:1].copy_(hidden_state)
+                    self.storage.latent.append(latent)
 
             while not all(done):
                 with torch.no_grad():
-                    value, action = self.agent.act(obs, latent, None, None)
+                    if self.args.algorithm == 'bicameral':
+                        value, action, (left_gating_value, _) = self.agent.act(obs, latent, None, None)
+                    else:
+                        value, action = self.agent.act(obs, latent, None, None)
 
                 next_obs, (rew_raw, rew_normalised), done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
-                # bad_mask is true if episode ended because time limit was reached
-              
 
-                # TODO: check if this needs to be done - how is it done in other loops
-                # reset hidden state if done
-                ## don't think this needs to be done
-                # if all(done):
-                #     hidden_state = self.agent.actor_critic.encoder.reset_hidden(hidden_state, masks_done)
+                ## combine all rewards
+                episode_reward.append(rew_raw)
+                # if we succeed at all then the task is successful
+                successes.append(torch.tensor([i['success'] for i in info]))
+                # log gating values ???
+
                 with torch.no_grad():
 
                     latent, hidden_state = self.agent.get_latent(
@@ -220,25 +231,44 @@ class ContinualLearner:
                     )
                     ## TODO: handle this in get_latent function
                     # just keep this for now
-                    latent = latent[None,:]
+                    # latent = latent[None,:]
 
                 
                 self.storage.next_state[step] = next_obs.clone()
                 ## TODO: need to figure out how to include gating values
                 ## TODO: need to figure out how to include task for EWC
-                self.storage.insert(
-                    state=next_obs.squeeze(),
-                    belief=None, # could I get rid of belief?
-                    task=None, # could I get rid of task?
-                    actions=action.double(),
-                    rewards_raw=rew_raw.squeeze(0),
-                    rewards_normalised=rew_normalised.squeeze(0),
-                    value_preds=value.squeeze(0),
-                    masks=masks_done.squeeze(0), 
-                    done=torch.from_numpy(done)[:,None].float(),
-                    hidden_states = hidden_state.squeeze(),
-                    latent = latent,
-                )
+                if self.args.algorithm != 'bicameral':
+                    self.storage.insert(
+                        state=next_obs.squeeze(),
+                        belief=None, # could I get rid of belief?
+                        task=None, # could I get rid of task?
+                        actions=action.double(),
+                        rewards_raw=rew_raw.squeeze(0),
+                        rewards_normalised=rew_normalised.squeeze(0),
+                        value_preds=value.squeeze(0),
+                        masks=masks_done.squeeze(0), 
+                        done=torch.from_numpy(done)[:,None].float(),
+                        hidden_states = hidden_state.squeeze(),
+                        latent = latent,
+                    )
+                    
+                else:
+
+                    # hidden state is tuple
+                    self.storage.insert(
+                        state=next_obs.squeeze(),
+                        belief=None, # could I get rid of belief?
+                        task=None, # could I get rid of task?
+                        actions=action.double(),
+                        rewards_raw=rew_raw.squeeze(0),
+                        rewards_normalised=rew_normalised.squeeze(0),
+                        value_preds=value.squeeze(0),
+                        masks=masks_done.squeeze(0), 
+                        done=torch.from_numpy(done)[:,None].float(),
+                        hidden_states = hidden_state,
+                        latent = latent,
+                    )
+   
 
                 obs = next_obs
 
@@ -248,7 +278,7 @@ class ContinualLearner:
                 latent, hidden_state = self.agent.get_latent(
                     action, obs, rew_raw, hidden_state, return_prior = False
                 )
-                latent = latent[None, :]
+                # latent = latent[None, :]
 
                 value = self.agent.get_value(
                     obs,
@@ -268,20 +298,33 @@ class ContinualLearner:
 
 
             ## Update
-            if self.args.algorithm != 'right_only':
-                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = self.agent.update(self.storage)
-            else:
-                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = np.nan, np.nan, np.nan, np.nan
+            if self.args.algorithm == 'bicameral':
+                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, gating_penalty_epoch, loss_epoch = \
+                    self.agent.update(self.storage)
+            elif self.args.algorithm == 'left_only':
+                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = \
+                    self.agent.update(self.storage)
+                gating_penalty_epoch = np.nan
+            elif self.args.algorithm == 'right_only':
+                value_loss_epoch, action_loss_epoch, dist_entropy_epoch, gating_penalty_epoch, loss_epoch = \
+                    np.nan, np.nan, np.nan, np.nan, np.nan
 
             ## calculate environment steps 
             frames = (eps+1) * self.num_processes * self.rollout_len
             ## log training loss
-            self.logger.add_tensorboard('value_loss', value_loss_epoch, frames)
-            self.logger.add_tensorboard('action_loss', action_loss_epoch, frames)
-            self.logger.add_tensorboard('entropy_loss', dist_entropy_epoch, frames)
-            self.logger.add_tensorboard('total_loss', loss_epoch, frames)
-            self.logger.add_tensorboard('current_task', current_task, frames)
+            self.logger.add_tensorboard('losses/value_loss', value_loss_epoch, frames)
+            self.logger.add_tensorboard('losses/action_loss', action_loss_epoch, frames)
+            self.logger.add_tensorboard('losses/entropy_loss', dist_entropy_epoch, frames)
+            self.logger.add_tensorboard('losses/gating_penalty', gating_penalty_epoch, frames)
+            self.logger.add_tensorboard('losses/total_loss', loss_epoch, frames)
+            
 
+            ## TODO: log gating values (only left as left = (1 - right))
+            self.logger.add_tensorboard('train_results/episode_rewards',torch.stack(episode_reward).cpu().mean(), frames)
+            self.logger.add_tensorboard('train_results/episode_success',torch.stack(successes).max(0)[0].mean(), frames)
+            # self.logger.add_tensorboard('train_results/left_gating_values, torch.stack(left_gating_values).cpu().mean(), frames)
+
+            self.logger.add_tensorboard('current_task', current_task, frames)
             # clears out old data
             self.storage.after_update()
 
@@ -360,34 +403,50 @@ class ContinualLearner:
 
             ## log the results here
             task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].sum()
+            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].mean()
   
-        end_time = time.time()
-        self.logger.add_tensorboard('current_task', current_task, eps)
-
         #log rewards, successes to tensorboard
-        ## TODO: is there a neater way? e.g. log each of these under the same board
-        self.logger.add_multiple_tensorboard('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
-        self.logger.add_multiple_tensorboard('task_successes', task_successes, eps)
+        for task_name in self.env_id_to_name.values():
+            self.logger.add_tensorboard(f'test_results/{task_name}_rewards', torch.mean(task_rewards[task_name]), eps)
+            self.logger.add_tensorboard(f'test_results/{task_name}_successes', task_successes[task_name], eps)
 
-        # log reward quantiles, successes to csv
-        # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
-        for task in task_rewards.keys():
+            ## log out csv also
             reward_quantiles = torch.quantile(
-                task_rewards[task],
+                task_rewards[task_name],
                 torch.tensor(self.quantiles)
             ).numpy().tolist()
 
             to_write = (
                 current_task_name,
                 task,
-                task_successes[task].numpy(),
+                task_successes[task_name].numpy(),
                 test_processes, # record number of eval tasks per env
-                task_rewards[task].mean().numpy(),
+                task_rewards[task_name].mean().numpy(),
                 *reward_quantiles,
                 eps
             )
             self.logger.add_csv(to_write)
-        
+        # self.logger.add_multiple_tensorboard('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
+        # self.logger.add_multiple_tensorboard('task_successes', task_successes, eps)
+
+        # log reward quantiles, successes to csv
+        # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
+        # for task in task_rewards.keys():
+        #     reward_quantiles = torch.quantile(
+        #         task_rewards[task],
+        #         torch.tensor(self.quantiles)
+        #     ).numpy().tolist()
+
+        #     to_write = (
+        #         current_task_name,
+        #         task,
+        #         task_successes[task].numpy(),
+        #         test_processes, # record number of eval tasks per env
+        #         task_rewards[task].mean().numpy(),
+        #         *reward_quantiles,
+        #         eps
+        #     )
+        #     self.logger.add_csv(to_write)
+        end_time = time.time()
         print(f"eval completed in {end_time - start_time}")
         test_envs.close()

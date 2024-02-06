@@ -38,17 +38,16 @@ class ActorCritic(nn.Module):
     
 class BiCameralActorCritic(nn.Module):
 
-    def __init__(self, left_policy, left_encoder, right_policy, right_encoder):
+    def __init__(self, left_policy, left_encoder, right_policy, right_encoder, dim_state, init_std = 0.5):
         super().__init__()
         self.left_actor_critic = ActorCritic(left_policy, left_encoder)
         self.right_actor_critic = ActorCritic(right_policy, right_encoder)
 
-        ## TODO: make state dims a parameter
-        self.gating_network = GatingNetwork(40 + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2)
+        self.gating_network = GatingNetwork(
+            dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
+        )
 
-        ## TODO: make parameter 
-        # placeholder for now
-        self.std = torch.tensor([0.5]).to(device)
+        self.std = torch.tensor([init_std]).to(device)
     
     def encoder(self, action, state, reward, hidden_state, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
@@ -121,24 +120,24 @@ class BiCameralActorCritic(nn.Module):
         else:
             actions = dist.sample() ## assumes not deterministic
         ## TODO: return gating values?
-        return combined_values, actions, dist
+        return combined_values, actions, dist, (left_gate_value, right_gate_value)
     
     def act(self, state, latent, belief=None, task=None, deterministic=False):
-        values, actions, _ = self.policy(state, latent, None, None, deterministic = deterministic)
-        return values, actions
+        values, actions, _, gating_values = self.policy(state, latent, None, None, deterministic = deterministic)
+        return values, actions, gating_values
 
     def get_value(self, state, latent, belief=None, task=None):
-        value, _, _ = self.policy(state, latent, belief, task)
+        value, _, _, _ = self.policy(state, latent, belief, task)
         return value
     
     def evaluate_actions(self, state, latent, belief, task, action):
         """
         Gets the distribution of the entire network
         """
-        values, _, dist = self.policy(state, latent, None, None)
+        values, _, dist, gating_values = self.policy(state, latent, None, None)
         action_log_probs = dist.log_probs(action)
-        dist_entropy = dist.entropy()#.mean()
-        return values, action_log_probs, dist_entropy
+        dist_entropy = dist.entropy().mean()
+        return values, action_log_probs, dist_entropy, gating_values
 
     def evaluate_actions_by_hemisphere(self, state, latent, belief, task, action):
         """Call policy eval, set task, belief to None"""

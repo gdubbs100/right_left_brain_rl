@@ -174,7 +174,7 @@ class CustomOnlineStorage(object):
     
     def before_update(self, policy):
         # this is about building the computation graph during training
-        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
+        _, action_log_probs, _, = policy.evaluate_actions(self.prev_state[:-1],
                                                          torch.cat(self.latent[:-1]),
                                                          None,
                                                          None,
@@ -405,7 +405,7 @@ class BiHemOnlineStorage(object):
         # this is about building the computation graph during training
         left_latent = torch.cat(self.left_latent[:-1])
         right_latent = torch.cat(self.right_latent[:-1])
-        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
+        _, action_log_probs, _, _ = policy.evaluate_actions(self.prev_state[:-1],
                                                          (left_latent, right_latent),
                                                          None,
                                                          None,
