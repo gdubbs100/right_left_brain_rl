@@ -313,10 +313,10 @@ class ContinualLearner:
             
             # log training results
             task_rewards = torch.stack(episode_reward).cpu()
-            task_successes = torch.stack(successes)
+            task_successes = torch.stack(successes.max(0)[0].mean())
             task_gating_values = torch.stack(gating_values).cpu()
             self.logger.add_tensorboard('train_results/episode_rewards',task_rewards.mean(), frames)
-            self.logger.add_tensorboard('train_results/episode_success',task_successes.max(0)[0].mean(), frames)
+            self.logger.add_tensorboard('train_results/episode_success',task_successes, frames)
             self.logger.add_tensorboard('train_results/left_gating_values', task_gating_values.mean(), frames)
 
             self.logger.add_tensorboard('current_task', current_task, frames)
