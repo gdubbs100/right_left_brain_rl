@@ -418,7 +418,7 @@ class ContinualLearner:
 
             to_write = (
                 current_task_name,
-                task,
+                task_name,
                 task_successes[task_name].numpy(),
                 test_processes, # record number of eval tasks per env
                 task_rewards[task_name].mean().numpy(),
