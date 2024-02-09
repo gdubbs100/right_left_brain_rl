@@ -210,11 +210,11 @@ class ContinualLearner:
                     if self.args.algorithm == 'bicameral':
                         value, action, (left_gating_value, _) = self.agent.act(obs, latent, None, None)
                         ## collect gating values
-                        gating_values.append(left_gating_value.squeeze())
+                        gating_values.append(left_gating_value.detach())
                     else:
                         value, action = self.agent.act(obs, latent, None, None)
                         ## dummy gating value
-                        gating_values.append(0)
+                        gating_values.append(torch.tensor(0.))
 
                 next_obs, (rew_raw, rew_normalised), done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
@@ -395,11 +395,11 @@ class ContinualLearner:
                     if self.args.algorithm == 'bicameral':
                         value, action, (left_gating_value, _) = self.agent.act(obs, latent, None, None, deterministic=True)
                         ## collect gating values
-                        gating_values.append(left_gating_value.squeeze())
+                        gating_values.append(left_gating_value.detach())
                     else:
                         value, action = self.agent.act(obs, latent, None, None, deterministic=True)
                         ## dummy gating value
-                        gating_values.append(0)
+                        gating_values.append(torch.tensor(0.))
                 
                 # no need for normalised_reward during eval
                 next_obs, (rew_raw, _), done, info = test_envs.step(action)
