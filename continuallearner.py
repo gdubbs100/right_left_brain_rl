@@ -429,7 +429,7 @@ class ContinualLearner:
                 task_name, 
                 task_rewards[task_name],
                 task_successes[task_name],
-                task_gating_value[task_name],
+                task_gating_values[task_name],
                 test_processes,
                 current_task_name,
                 frames,
