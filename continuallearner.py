@@ -434,6 +434,10 @@ class ContinualLearner:
                 current_task_name,
                 frames,
                 train=False) # log to test csv
+
+        end_time = time.time()
+        print(f"eval completed in {end_time - start_time}")
+        test_envs.close()
         # for task_name in self.env_id_to_name.values():
         #     self.logger.add_tensorboard(f'test_results/{task_name}_rewards', torch.mean(task_rewards[task_name]), eps)
         #     self.logger.add_tensorboard(f'test_results/{task_name}_successes', task_successes[task_name], eps)
@@ -462,44 +466,44 @@ class ContinualLearner:
         #     )
         #     self.logger.add_csv(to_write)
 
-        def log_results(self, task_name, rewards, successes, gating_values, processes, current_task, frame, train):
+    def log_results(self, task_name, rewards, successes, gating_values, processes, current_task, frame, train):
 
-            # for task_name in task_names:
-            self.logger.add_tensorboard(
-                f'test_results/{task_name}_rewards', 
-                torch.mean(rewards), 
-                eps)
-            self.logger.add_tensorboard(
-                f'test_results/{task_name}_successes', 
-                successes, 
-                eps)
-            self.logger.add_tensorboard(
-                f'test_results/{task_name}_left_gating_values', 
-                torch.mean(gating_values), 
-                eps)
+        # for task_name in task_names:
+        self.logger.add_tensorboard(
+            f'test_results/{task_name}_rewards', 
+            torch.mean(rewards), 
+            eps)
+        self.logger.add_tensorboard(
+            f'test_results/{task_name}_successes', 
+            successes, 
+            eps)
+        self.logger.add_tensorboard(
+            f'test_results/{task_name}_left_gating_values', 
+            torch.mean(gating_values), 
+            eps)
 
-            ## log out csv also
-            reward_quantiles = torch.quantile(
-                rewards,
-                torch.tensor(self.quantiles)
-            ).numpy().tolist()
+        ## log out csv also
+        reward_quantiles = torch.quantile(
+            rewards,
+            torch.tensor(self.quantiles)
+        ).numpy().tolist()
 
-            gating_value_quantiles = torch.quantile(
-                gating_values,
-                torch.tensor(self.quantiles)
-            ).numpy().tolist()
+        gating_value_quantiles = torch.quantile(
+            gating_values,
+            torch.tensor(self.quantiles)
+        ).numpy().tolist()
 
-            to_write = (
-                current_task,
-                task_name,
-                successes.numpy(),
-                processes, # record number tasks per env
-                rewards.mean().numpy(),
-                *reward_quantiles,
-                *gating_value_quantiles,
-                frame
-            )
-            self.logger.add_csv(to_write, train)
+        to_write = (
+            current_task,
+            task_name,
+            successes.numpy(),
+            processes, # record number tasks per env
+            rewards.mean().numpy(),
+            *reward_quantiles,
+            *gating_value_quantiles,
+            frame
+        )
+        self.logger.add_csv(to_write, train)
 
         # self.logger.add_multiple_tensorboard('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
         # self.logger.add_multiple_tensorboard('task_successes', task_successes, eps)
@@ -522,6 +526,3 @@ class ContinualLearner:
         #         eps
         #     )
         #     self.logger.add_csv(to_write)
-        end_time = time.time()
-        print(f"eval completed in {end_time - start_time}")
-        test_envs.close()
