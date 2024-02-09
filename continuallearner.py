@@ -323,12 +323,12 @@ class ContinualLearner:
 
             ## save to csv
             self.log_results(
-                self.env_id_to_name[current_task], 
+                self.env_id_to_name[current_task + 1], 
                 task_rewards,
                 task_successes,
                 task_gating_values,
                 self.num_processes,
-                self.env_id_to_name[current_task],
+                self.env_id_to_name[current_task + 1],
                 frames,
                 train=True)
             # clears out old data
