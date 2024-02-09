@@ -50,7 +50,7 @@ def main():
 
     ## admin stuff
     parser.add_argument('--seed', type=int, default=42, help="set the seed for maximum reproducibility")
-    parser.add_argument('--log_every', type=int, default=10, help="logging frequency where integer value is number of updates")
+    parser.add_argument('--eval_every', type=int, default=10, help="logging frequency where integer value is number of updates")
 
     args, rest_args = parser.parse_known_args()
 
@@ -77,7 +77,7 @@ def main():
         args.log_folder, 
         gamma = args.gamma, 
         tau = args.tau, 
-        log_every = args.log_every, 
+        eval_every = args.eval_every, 
         randomization=args.randomization,
         args = args # pass args through to logger if you want
     )
