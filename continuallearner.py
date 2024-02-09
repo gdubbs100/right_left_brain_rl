@@ -472,15 +472,15 @@ class ContinualLearner:
         self.logger.add_tensorboard(
             f'test_results/{task_name}_rewards', 
             torch.mean(rewards), 
-            eps)
+            frame)
         self.logger.add_tensorboard(
             f'test_results/{task_name}_successes', 
             successes, 
-            eps)
+            frame)
         self.logger.add_tensorboard(
             f'test_results/{task_name}_left_gating_values', 
             torch.mean(gating_values), 
-            eps)
+            frame)
 
         ## log out csv also
         reward_quantiles = torch.quantile(
