@@ -28,6 +28,8 @@ def main():
     parser.add_argument('--randomization', type=str, default='deterministic', help='randomisation setting for CW must be one of: deterministic, random_init_all, random_init_fixed20, random_init_small_box')
 
     ## TODO: Add algorithm specific params - for bicameral mainly
+    parser.add_argument('--gating_alpha', type=float, default=0., help="exponent of gating penalty")
+    parser.add_argument('--gating_beta', type = float, default=1., help="multiplicative parameter for gating penalty (set to 1 to turn off)")
     
     ## PPO params
     parser.add_argument('--ppo_clip_param', type=float, default=0.2, help='PPO clip parameter')
