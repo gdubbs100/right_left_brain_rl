@@ -10,3 +10,7 @@ def get_args_from_config(filepath):
             args.__dict__.update(json.load(f))
 
     return args
+
+def freeze_parameters(torch_network):
+      for param in torch_network.parameters():
+            param.requires_grad = False

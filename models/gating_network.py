@@ -12,13 +12,8 @@ class GatingNetwork(nn.Module):
         self.ff = nn.Linear(input_dims, 2)
 
     def forward(self, state, left_latent, right_latent):
-        # if isinstance(latent, tuple):
-        #     left_latent = latent[0]
-        #     right_latent = latent[1]
-        # else:
-        #     raise ValueError
+
         inputs = torch.cat((left_latent, right_latent, state), dim=-1)
         outputs = F.softmax(self.ff(inputs), dim=-1)
-        #left value, right value
         return outputs[...,:1], outputs[...,1:]
 

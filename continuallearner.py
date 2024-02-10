@@ -13,7 +13,7 @@ from algorithms.custom_ppo import CustomPPO, BiHemPPO
 from algorithms.custom_storage import CustomOnlineStorage, BiHemOnlineStorage
 
 from utils import helpers as utl
-from utils.custom_helpers import get_args_from_config
+from utils.custom_helpers import get_args_from_config, freeze_parameters
 from utils.custom_logger import CustomLogger
 from environments.custom_env_utils import prepare_parallel_envs, prepare_base_envs
 
@@ -80,16 +80,32 @@ class ContinualLearner:
         # create network and agent
         self.agent, self.left_init_args, self.right_init_args = self.init_agent(self.args)
 
-        self.storage = CustomOnlineStorage(
+        if self.args.algorithm != 'bicameral':
+            self.storage = CustomOnlineStorage(
+                        self.rollout_len, 
+                        self.num_processes, 
+                        self.envs.observation_space.shape[0]+1, 
+                        0, # what's this? 
+                        0, # what's this?
+                        self.envs.action_space, 
+                        self.agent.actor_critic.encoder.hidden_size, 
+                        self.agent.actor_critic.encoder.latent_dim, 
+                        self.normalise_rewards # normalise rewards for policy - set to true, but implement
+                    )
+        elif self.args.algorithm == 'bicameral':
+                self.storage = BiHemOnlineStorage(
                     self.rollout_len, 
                     self.num_processes, 
                     self.envs.observation_space.shape[0]+1, 
                     0, # what's this? 
                     0, # what's this?
                     self.envs.action_space, 
-                    self.agent.actor_critic.encoder.hidden_size, 
-                    self.agent.actor_critic.encoder.latent_dim, 
-                    self.normalise_rewards # normalise rewards for policy - set to true, but implement
+                    ## BiHemOnlineStorage - have separate left / right encoder/ hidden dims
+                    left_hidden_size=self.agent.actor_critic.left_actor_critic.encoder.hidden_size, 
+                    right_hidden_size=self.agent.actor_critic.right_actor_critic.encoder.hidden_size, 
+                    left_latent_dim=self.agent.actor_critic.left_actor_critic.encoder.latent_dim, 
+                    right_latent_dim=self.agent.actor_critic.right_actor_critic.encoder.latent_dim, 
+                    normalise_rewards=self.normalise_rewards # normalise rewards for policy - set to true, but implement
                 )
         
         self.quantiles = quantiles
@@ -117,55 +133,57 @@ class ContinualLearner:
             ## create randomly initialised policy with settings from config file
             left_init_args = get_args_from_config(self.args.run_folder)
             left_policy_net = Policy(
-                args=init_args,
-                pass_state_to_policy=init_args.pass_state_to_policy,
-                pass_latent_to_policy=init_args.pass_latent_to_policy,
-                pass_belief_to_policy=init_args.pass_belief_to_policy,
-                pass_task_to_policy=init_args.pass_task_to_policy,
+                args=left_init_args,
+                pass_state_to_policy=left_init_args.pass_state_to_policy,
+                pass_latent_to_policy=left_init_args.pass_latent_to_policy,
+                pass_belief_to_policy=left_init_args.pass_belief_to_policy,
+                pass_task_to_policy=left_init_args.pass_task_to_policy,
                 dim_state=self.envs.observation_space.shape[0]+1, # to add done flag
-                dim_latent=init_args.latent_dim * 2,
+                dim_latent=left_init_args.latent_dim * 2,
                 dim_belief=0,
                 dim_task=0,
-                hidden_layers=init_args.policy_layers,
-                activation_function=init_args.policy_activation_function,
-                policy_initialisation=init_args.policy_initialisation,
+                hidden_layers=left_init_args.policy_layers,
+                activation_function=left_init_args.policy_activation_function,
+                policy_initialisation=left_init_args.policy_initialisation,
                 action_space=self.envs.action_space,
-                init_std=init_args.policy_init_std
+                init_std=left_init_args.policy_init_std
             ).to(device)
 
             left_encoder_net = RNNEncoder(
-                args=init_args,
-                layers_before_gru=init_args.encoder_layers_before_gru,
-                hidden_size=init_args.encoder_gru_hidden_size,
-                layers_after_gru=init_args.encoder_layers_after_gru,
-                latent_dim=init_args.latent_dim,
+                args=left_init_args,
+                layers_before_gru=left_init_args.encoder_layers_before_gru,
+                hidden_size=left_init_args.encoder_gru_hidden_size,
+                layers_after_gru=left_init_args.encoder_layers_after_gru,
+                latent_dim=left_init_args.latent_dim,
                 action_dim=self.envs.action_space.shape[0],
-                action_embed_dim=init_args.action_embedding_size,
+                action_embed_dim=left_init_args.action_embedding_size,
                 state_dim=self.envs.observation_space.shape[0]+1, # for done flag
-                state_embed_dim=init_args.state_embedding_size,
+                state_embed_dim=left_init_args.state_embedding_size,
                 reward_size=1,
-                reward_embed_size=init_args.reward_embedding_size,
+                reward_embed_size=left_init_args.reward_embedding_size,
             ).to(device)
 
-        elif self.args.algorithm != 'left_only':
+        if self.args.algorithm != 'left_only':
             policy_loc = args.run_folder + '/models/policy.pt'
             encoder_loc = args.run_folder + '/models/encoder.pt'
-            right_policy_net = torch.load(policy_loc)
-            right_encoder_net = torch.load(encoder_loc)
+            right_policy_net = torch.load(policy_loc).to(device)
+            right_encoder_net = torch.load(encoder_loc).to(device)
             ## freeze these!
+            freeze_parameters(right_policy_net)
+            freeze_parameters(right_encoder_net)
 
             ## create init_args from loaded networks
-            assert policy_net.args==encoder_net.args, "policy and encoder args should match!"
-            right_init_args = policy_net.args
+            assert right_policy_net.args==right_encoder_net.args, "policy and encoder args should match!"
+            right_init_args = right_policy_net.args
             del right_init_args.action_space # not needed for logs, causes error in json
         
         if self.args.algorithm == 'bicameral':
             ac = BiHemActorCritic(
                 left_policy_net, left_encoder_net,
                 right_policy_net, right_encoder_net,
-                envs.observation_space.shape[0] + 1, init_std = 0.5 ## update to param
-            )
-            BiHemPPO(
+                self.envs.observation_space.shape[0] + 1, init_std = 0.5 ## update to param
+            ).to(device)
+            agent = BiHemPPO(
                 actor_critic=ac,
                 value_loss_coef = self.args.value_loss_coef,
                 entropy_coef = self.args.entropy_coef,
@@ -240,21 +258,25 @@ class ContinualLearner:
             with torch.no_grad():
 
                 latent, hidden_state = self.agent.get_prior(self.num_processes)
-                assert len(self.storage.latent) == 0  # make sure we emptied buffers
+                # assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
                 if self.args.algorithm == 'bicameral':
+                    assert (len(self.storage.left_latent) == 0) & (len(self.storage.right_latent) == 0)
+                    
                     self.storage.left_hidden_states[:1].copy_(hidden_state[0])
                     self.storage.right_hidden_states[:1].copy_(hidden_state[1])
                     self.storage.left_latent.append(latent[0])
                     self.storage.right_latent.append(latent[1])
                 else:
+                    assert len(self.storage.latent) == 0  # make sure we emptied buffers
                     self.storage.hidden_states[:1].copy_(hidden_state)
                     self.storage.latent.append(latent)
 
             while not all(done):
                 with torch.no_grad():
                     if self.args.algorithm == 'bicameral':
-                        value, action, (left_gating_value, _) = self.agent.act(obs, latent, None, None)
+                        ## TODO: don't like unsqueeze obs but ok for now
+                        value, action, (left_gating_value, _) = self.agent.act(obs.unsqueeze(0), latent, None, None)
                         ## collect gating values
                         gating_values.append(left_gating_value.detach())
                     else:
@@ -321,7 +343,7 @@ class ContinualLearner:
                 )
 
                 value = self.agent.get_value(
-                    obs,
+                    obs.unsqueeze(0),
                     latent,
                     None,
                     None
@@ -439,7 +461,7 @@ class ContinualLearner:
                 #     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
                 with torch.no_grad():
                     if self.args.algorithm == 'bicameral':
-                        value, action, (left_gating_value, _) = self.agent.act(obs, latent, None, None, deterministic=True)
+                        value, action, (left_gating_value, _) = self.agent.act(obs.unsqueeze(0), latent, None, None, deterministic=True)
                         ## collect gating values
                         gating_values.append(left_gating_value.detach())
                     else:

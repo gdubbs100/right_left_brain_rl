@@ -307,10 +307,16 @@ class BiHemPPO:
                 self.optimiser.zero_grad()
 
                 # compute gating penalty (use logs for stability) (?)
+                # gating_penalty = (
+                #     np.log(self.gating_beta + 1.0e-5) + \
+                #     self.gating_alpha * (torch.log(right_gate_value) - torch.log(left_gate_value))
+                # ).mean()
+
                 gating_penalty = (
-                    np.log(self.gating_beta + 1.0e-5) + \
-                    self.gating_alpha * (torch.log(right_gate_value) - torch.log(left_gate_value))
+                    self.gating_beta * \
+                    (right_gate_value / (left_gate_value + 1.0e-5))**self.gating_alpha
                 ).mean()
+
 
                 # compute policy loss and backprop
                 loss = value_loss * self.value_loss_coef + action_loss - dist_entropy * self.entropy_coef + gating_penalty
