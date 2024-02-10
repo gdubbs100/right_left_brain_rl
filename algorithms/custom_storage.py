@@ -412,7 +412,6 @@ class BiHemOnlineStorage(object):
                                                          self.actions)
         self.action_log_probs = action_log_probs.detach()
 
-    ## TODO: update this to work with bicameral agent
     def feed_forward_generator(self,
                                advantages,
                                num_mini_batch=None,
