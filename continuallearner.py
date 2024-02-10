@@ -5,12 +5,12 @@ import gym
 import numpy as np
 import torch
 
-from models.combined_actor_critic import ActorCritic
+from models.combined_actor_critic import ActorCritic, BiHemActorCritic
 from models.policy import Policy
 from models.encoder import RNNEncoder
 
-from algorithms.custom_ppo import CustomPPO
-from algorithms.custom_storage import CustomOnlineStorage
+from algorithms.custom_ppo import CustomPPO, BiHemPPO
+from algorithms.custom_storage import CustomOnlineStorage, BiHemOnlineStorage
 
 from utils import helpers as utl
 from utils.custom_helpers import get_args_from_config
@@ -78,7 +78,7 @@ class ContinualLearner:
         self.rollout_len = rollout_len
 
         # create network and agent
-        self.agent, self.base_network_args = self.init_agent(self.args)
+        self.agent, self.left_init_args, self.right_init_args = self.init_agent(self.args)
 
         self.storage = CustomOnlineStorage(
                     self.rollout_len, 
@@ -98,7 +98,8 @@ class ContinualLearner:
             self.log_dir, 
             self.quantiles, 
             args = self.args, 
-            base_network_args = self.base_network_args)
+            left_args = self.left_init_args,
+            right_args = self.right_init_args)
         self.eval_every = eval_every
 
         # # calculate number of updates and keep count of frames/iterations
@@ -107,10 +108,15 @@ class ContinualLearner:
         # self.iter_idx = -1
 
     def init_agent(self, args):
-        if self.args.algorithm == 'left_only':
+        ## update if relevant
+        left_init_args = None
+        right_init_args = None
+
+        ## create agent / actor critic
+        if self.args.algorithm != 'right_only':
             ## create randomly initialised policy with settings from config file
-            init_args = get_args_from_config(self.args.run_folder)
-            policy_net = Policy(
+            left_init_args = get_args_from_config(self.args.run_folder)
+            left_policy_net = Policy(
                 args=init_args,
                 pass_state_to_policy=init_args.pass_state_to_policy,
                 pass_latent_to_policy=init_args.pass_latent_to_policy,
@@ -127,7 +133,7 @@ class ContinualLearner:
                 init_std=init_args.policy_init_std
             ).to(device)
 
-            encoder_net = RNNEncoder(
+            left_encoder_net = RNNEncoder(
                 args=init_args,
                 layers_before_gru=init_args.encoder_layers_before_gru,
                 hidden_size=init_args.encoder_gru_hidden_size,
@@ -141,38 +147,78 @@ class ContinualLearner:
                 reward_embed_size=init_args.reward_embedding_size,
             ).to(device)
 
-        elif self.args.algorithm == 'right_only':
+        elif self.args.algorithm != 'left_only':
             policy_loc = args.run_folder + '/models/policy.pt'
             encoder_loc = args.run_folder + '/models/encoder.pt'
-            policy_net = torch.load(policy_loc)
-            encoder_net = torch.load(encoder_loc)
+            right_policy_net = torch.load(policy_loc)
+            right_encoder_net = torch.load(encoder_loc)
+            ## freeze these!
 
             ## create init_args from loaded networks
             assert policy_net.args==encoder_net.args, "policy and encoder args should match!"
-            init_args = policy_net.args
-            del init_args.action_space # not needed for logs, causes error in json
-        elif self.args.algorithm == 'bicameral':
-            ## TODO: develop this
-            raise NotImplementedError
+            right_init_args = policy_net.args
+            del right_init_args.action_space # not needed for logs, causes error in json
+        
+        if self.args.algorithm == 'bicameral':
+            ac = BiHemActorCritic(
+                left_policy_net, left_encoder_net,
+                right_policy_net, right_encoder_net,
+                envs.observation_space.shape[0] + 1, init_std = 0.5 ## update to param
+            )
+            BiHemPPO(
+                actor_critic=ac,
+                value_loss_coef = self.args.value_loss_coef,
+                entropy_coef = self.args.entropy_coef,
+                policy_optimiser=self.args.optimiser,
+                lr = self.args.learning_rate,
+                eps= self.args.eps, # for adam optimiser
+                clip_param = self.args.ppo_clip_param, 
+                ppo_epoch = self.args.ppo_epoch, 
+                num_mini_batch=self.args.num_mini_batch,
+                use_huber_loss = self.args.use_huberloss,
+                use_clipped_value_loss=self.args.use_clipped_value_loss,
+                gating_alpha=self.args.gating_alpha,
+                gating_beta=self.args.gating_beta,
+                context_window=args.context_window
+            )
+        elif self.args.algorithm == 'left_only':
+            ac = ActorCritic(left_policy_net, left_encoder_net)
+            agent = CustomPPO(
+                actor_critic=ac,
+                value_loss_coef = self.args.value_loss_coef,
+                entropy_coef = self.args.entropy_coef,
+                policy_optimiser=self.args.optimiser,
+                lr = self.args.learning_rate,
+                eps= self.args.eps, # for adam optimiser
+                clip_param = self.args.ppo_clip_param, 
+                ppo_epoch = self.args.ppo_epoch, 
+                num_mini_batch=self.args.num_mini_batch,
+                use_huber_loss = self.args.use_huberloss,
+                use_clipped_value_loss=self.args.use_clipped_value_loss,
+                context_window=args.context_window
+            )
+        elif self.args.algorithm == 'right_only':
+            ac = ActorCritic(right_policy_net, right_encoder_net)
+            agent = CustomPPO(
+                actor_critic=ac,
+                value_loss_coef = self.args.value_loss_coef,
+                entropy_coef = self.args.entropy_coef,
+                policy_optimiser=self.args.optimiser,
+                lr = self.args.learning_rate,
+                eps= self.args.eps, # for adam optimiser
+                clip_param = self.args.ppo_clip_param, 
+                ppo_epoch = self.args.ppo_epoch, 
+                num_mini_batch=self.args.num_mini_batch,
+                use_huber_loss = self.args.use_huberloss,
+                use_clipped_value_loss=self.args.use_clipped_value_loss,
+                context_window=args.context_window
+            )
+        else:
+            raise NotImplementedError("Set algorithm to one of left_only, right_only or bicameral")
 
-        ## create networks / agents
-        ac = ActorCritic(policy_net, encoder_net)
-        agent = CustomPPO(
-            actor_critic=ac,
-            value_loss_coef = self.args.value_loss_coef,
-            entropy_coef = self.args.entropy_coef,
-            policy_optimiser=self.args.optimiser,
-            lr = self.args.learning_rate,
-            eps= self.args.eps, # for adam optimiser
-            clip_param = self.args.ppo_clip_param, 
-            ppo_epoch = self.args.ppo_epoch, 
-            num_mini_batch=self.args.num_mini_batch,
-            use_huber_loss = self.args.use_huberloss,
-            use_clipped_value_loss=self.args.use_clipped_value_loss,
-            context_window=args.context_window
-        )
+        
 
-        return agent, init_args
+        return agent, left_init_args, right_init_args
     
     def train(self):
         """ Main Training loop """

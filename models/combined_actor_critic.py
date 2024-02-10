@@ -36,7 +36,7 @@ class ActorCritic(nn.Module):
         """Call policy eval, set task, belief to None"""
         return self.policy.evaluate_actions(state, latent, belief, task, action)
     
-class BiCameralActorCritic(nn.Module):
+class BiHemActorCritic(nn.Module):
 
     def __init__(self, left_policy, left_encoder, right_policy, right_encoder, dim_state, init_std = 0.5):
         super().__init__()

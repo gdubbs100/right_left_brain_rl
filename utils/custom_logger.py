@@ -10,10 +10,11 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class CustomLogger:
-    def __init__(self, log_dir,  logging_quantiles, args = None, base_network_args = None):
+    def __init__(self, log_dir,  logging_quantiles, args = None, left_args = None, right_args = None):
 
         self.args = args
-        self.base_network_args = base_network_args
+        self.left_args = left_args
+        self.right_args = right_args
 
         self.log_dir = os.path.join(
             log_dir,
@@ -64,9 +65,11 @@ class CustomLogger:
             print('no args supplied...')
 
         ### save out network args if supplied to continual learner - otherwise ignore
-        if self.base_network_args is not None:
+        if self.left_args is not None:
 
-            self.log_args(self.base_network_args, os.path.join(self.log_dir,'base_network_config.json'))
+            self.log_args(self.left_args, os.path.join(self.log_dir,'left_config.json'))
+        elif self.right_args is not None:
+            self.log_args(self.right_args, os.path.join(self.log_dir,'right_config.json'))
         else:
             print('no base network args supplied...')
 
