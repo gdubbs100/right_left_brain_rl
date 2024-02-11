@@ -182,6 +182,7 @@ class ContinualLearner:
                 left_policy_net, left_encoder_net,
                 right_policy_net, right_encoder_net,
                 self.envs.observation_space.shape[0] + 1, 
+                self.envs.action_space.shape[0],
                 init_std = args.init_std,
                 ## gating schedule functions
                 use_gating_schedule = self.args.use_gating_schedule,

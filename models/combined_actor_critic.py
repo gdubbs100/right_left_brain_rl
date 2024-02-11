@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from models.policy import FixedNormal
 from models.gating_network import GatingNetwork, StepGatingNetwork
 
@@ -44,7 +45,8 @@ class BiHemActorCritic(nn.Module):
             left_encoder, 
             right_policy, 
             right_encoder, 
-            dim_state, 
+            dim_state,
+            dim_action, 
             init_std, 
             use_gating_schedule = False,
             gating_schedule_type = None,
@@ -67,8 +69,10 @@ class BiHemActorCritic(nn.Module):
             self.gating_network = GatingNetwork(
                 dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
             )
-
-        self.std = torch.tensor([init_std]).to(device)
+        self.logstd = nn.Parameter(np.log(torch.zeros(dim_action) + init_std))
+        self.min_std = torch.tensor([1.0e-6]).to(device)
+        # self.max_std = torch.tensor([1.0e6]).to(device)
+        # self.std = torch.tensor([init_std]).to(device)
     
     def encoder(self, action, state, reward, hidden_state, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
@@ -135,7 +139,8 @@ class BiHemActorCritic(nn.Module):
         combined_values = left_gate_value * left_value + right_gate_value * right_value
         
         # use 'self.std' for now
-        dist = FixedNormal(combined_action_means, self.std)
+        std = torch.max(self.min_std, self.logstd.exp())
+        dist = FixedNormal(combined_action_means, std)
         if deterministic:
             actions = dist.mean
         else:
