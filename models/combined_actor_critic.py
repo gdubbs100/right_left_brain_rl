@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from models.policy import FixedNormal
-from models.gating_network import GatingNetwork
+from models.gating_network import GatingNetwork, StepGatingNetwork
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -38,14 +38,35 @@ class ActorCritic(nn.Module):
     
 class BiHemActorCritic(nn.Module):
 
-    def __init__(self, left_policy, left_encoder, right_policy, right_encoder, dim_state, init_std = 0.5):
+    def __init__(
+            self, 
+            left_policy, 
+            left_encoder, 
+            right_policy, 
+            right_encoder, 
+            dim_state, 
+            init_std, 
+            use_gating_schedule = False,
+            gating_schedule_type = None,
+            gating_schedule_update = None,
+            min_right_value = None,
+            init_right_value = None
+        ):
         super().__init__()
         self.left_actor_critic = ActorCritic(left_policy, left_encoder)
         self.right_actor_critic = ActorCritic(right_policy, right_encoder)
 
-        self.gating_network = GatingNetwork(
-            dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
-        )
+        if use_gating_schedule:
+            self.gating_network = StepGatingNetwork(
+                gating_schedule_type=gating_schedule_type, 
+                gating_schedule_update=gating_schedule_update, 
+                min_right_value=min_right_value, 
+                init_right_value=init_right_value
+            )
+        else:
+            self.gating_network = GatingNetwork(
+                dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
+            )
 
         self.std = torch.tensor([init_std]).to(device)
     
@@ -107,7 +128,7 @@ class BiHemActorCritic(nn.Module):
         right_action_mean = self.right_actor_critic.policy.dist.fc_mean(right_actor_features)
         
         # maybe gate network should take task? take combined latents and current state?
-        right_gate_value, left_gate_value = self.gating_network(state, left_latent, right_latent)
+        left_gate_value, right_gate_value = self.gating_network(state, left_latent, right_latent)
 
         # combine action and value estimate
         combined_action_means = left_gate_value * left_action_mean + right_gate_value * right_action_mean
@@ -119,7 +140,7 @@ class BiHemActorCritic(nn.Module):
             actions = dist.mean
         else:
             actions = dist.sample() ## assumes not deterministic
-        ## TODO: return gating values?
+
         return combined_values, actions, dist, (left_gate_value, right_gate_value)
     
     def act(self, state, latent, belief=None, task=None, deterministic=False):

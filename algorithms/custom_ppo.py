@@ -208,6 +208,7 @@ class BiHemPPO:
                  eps=None,
                  use_huber_loss=True,
                  use_clipped_value_loss=True,
+                 use_gating_penalty = False,
                  gating_alpha=0,
                  gating_beta=0,
                  context_window = None
@@ -226,6 +227,7 @@ class BiHemPPO:
         self.use_clipped_value_loss = use_clipped_value_loss
         self.use_huber_loss = use_huber_loss
 
+        self.use_gating_penalty = use_gating_penalty
         self.gating_alpha = gating_alpha
         self.gating_beta = gating_beta
 
@@ -311,11 +313,13 @@ class BiHemPPO:
                 #     np.log(self.gating_beta + 1.0e-5) + \
                 #     self.gating_alpha * (torch.log(right_gate_value) - torch.log(left_gate_value))
                 # ).mean()
-
-                gating_penalty = (
-                    self.gating_beta * \
-                    (right_gate_value / (left_gate_value + 1.0e-5))**self.gating_alpha
-                ).mean()
+                if self.use_gating_penalty:
+                    gating_penalty = (
+                        self.gating_beta * \
+                        (right_gate_value / (left_gate_value + 1.0e-5))**self.gating_alpha
+                    ).mean()
+                else:
+                    gating_penalty = torch.zeros_like(right_gate_value).mean()
 
 
                 # compute policy loss and backprop

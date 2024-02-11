@@ -1,6 +1,9 @@
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ## consider adding an encoder to get gating network latent
 class GatingNetwork(nn.Module):
@@ -19,21 +22,33 @@ class GatingNetwork(nn.Module):
 
 class StepGatingNetwork:
 
-    def __init__(self, num_steps, update_size, left_init = 0.01):
-        self.num_steps = num_steps
-        self.update_size = update_size
-        self.left = left_init
-        self.right = 1 - left_init
+    def __init__(self, gating_schedule_type, gating_schedule_update, min_right_value, init_right_value):
+        self.gating_schedule_type = gating_schedule_type
+        assert self.gating_schedule_type in ['addative', 'multiplicative']
+        self.gating_schedule_update = gating_schedule_update
+        self.right = init_right_value
+        self.left = 1 - self.right
+        self.min_right_value = min_right_value
 
     def __call__(self, state, left_latent, right_latent):
         inputs = torch.cat((left_latent, right_latent, state), dim=-1)
         outputs = torch.zeros((*inputs.size()[:-1], 2))
         outputs[...,:1] = self.left
         outputs[...,1:] = self.right
+        outputs = outputs.to(device)
+        outputs.requires_grad = False
         return outputs[...,:1], outputs[...,1:]
     
     def step(self):
-        ## apply a stepping function for gating network values
-        return None
+
+        # update right
+        if self.gating_schedule_type == 'addative':
+            self.right = np.max([self.right - self.gating_schedule_update, self.min_right_value])
+        
+        elif self.gating_schedule_type == 'multiplicative':
+            self.right = np.max([self.right * self.gating_schedule_update, self.min_right_value])
+        
+        # update left
+        self.left = 1 - self.right
 
 

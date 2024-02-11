@@ -27,10 +27,19 @@ def main():
     parser.add_argument('--num_processes', type=int, default=20, help="number of parallel processes to run - effectively controls batch size as one update is run per each episode x num_processes")
     parser.add_argument('--randomization', type=str, default='deterministic', help='randomisation setting for CW must be one of: deterministic, random_init_all, random_init_fixed20, random_init_small_box')
 
-    ## TODO: Add algorithm specific params - for bicameral mainly
-    parser.add_argument('--gating_alpha', type=float, default=0., help="exponent of gating penalty")
-    parser.add_argument('--gating_beta', type = float, default=1., help="multiplicative parameter for gating penalty (set to 1 to turn off)")
-    
+    ## Arguments for bicameral algorithm
+    ##NOTE: There are some parameter settings here that conflict - add checks?
+    parser.add_argument('--init_std', type = float, default=0.5, help = 'standard deviation for bicameral action dist')
+    parser.add_argument('--use_gating_penalty', type = boolean_argument, default = False, help="apply a gating penalty to the loss function")
+    parser.add_argument('--gating_alpha', type=float, default=0.75, help="exponent of gating penalty")
+    parser.add_argument('--gating_beta', type = float, default=0.1, help="multiplicative parameter for gating penalty")
+    parser.add_argument('--use_gating_schedule', type = boolean_argument, default = False, help="use an update schedule for gating values")
+    parser.add_argument('--gating_schedule_type', type = str, default='addative', help='set to addative or multiplicative. Addative subtracts a constant, multiplcative reduces by a factor.')
+    parser.add_argument('--gating_schedule_update', type=float, default=0.05, help="Constant or factor to reduce right gating value by when using schedule")
+    parser.add_argument('--min_right_value', type=float, default = 0.05, help = 'minimum gating value for the right network when stepping')
+    parser.add_argument('--init_right_value', type=float, default=0.95, help="Initialisation value for right gate when using scheduler")
+    parser.add_argument('--step_gate_every', type=int, default=10, help = 'frequency of gating scheduler updates - expressed in network updates')
+        
     ## PPO params
     parser.add_argument('--ppo_clip_param', type=float, default=0.2, help='PPO clip parameter')
     parser.add_argument('--ppo_epoch', type=int, default=16, help="PPO update epochs")

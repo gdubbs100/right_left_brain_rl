@@ -181,8 +181,16 @@ class ContinualLearner:
             ac = BiHemActorCritic(
                 left_policy_net, left_encoder_net,
                 right_policy_net, right_encoder_net,
-                self.envs.observation_space.shape[0] + 1, init_std = 0.5 ## update to param
+                self.envs.observation_space.shape[0] + 1, 
+                init_std = args.init_std,
+                ## gating schedule functions
+                use_gating_schedule = self.args.use_gating_schedule,
+                gating_schedule_type = self.args.gating_schedule_type,
+                gating_schedule_update = self.args.gating_schedule_update,
+                min_right_value=self.args.min_right_value,
+                init_right_value = self.args.init_right_value
             ).to(device)
+
             agent = BiHemPPO(
                 actor_critic=ac,
                 value_loss_coef = self.args.value_loss_coef,
@@ -195,9 +203,10 @@ class ContinualLearner:
                 num_mini_batch=self.args.num_mini_batch,
                 use_huber_loss = self.args.use_huberloss,
                 use_clipped_value_loss=self.args.use_clipped_value_loss,
+                use_gating_penalty = self.args.use_gating_penalty,
                 gating_alpha=self.args.gating_alpha,
                 gating_beta=self.args.gating_beta,
-                context_window=args.context_window
+                context_window=self.args.context_window
             )
         elif self.args.algorithm == 'left_only':
             ac = ActorCritic(left_policy_net, left_encoder_net)
@@ -401,6 +410,10 @@ class ContinualLearner:
                 train=True)
             # clears out old data
             self.storage.after_update()
+
+            # gating network stepper
+            if (self.args.use_gating_schedule) and ((eps+1) % self.args.step_gate_every == 0):
+                 self.agent.actor_critic.gating_network.step()
 
             if (eps+1) % self.eval_every == 0:
                 print(f"Evaluating at Update: {eps}, with {frames} frames")
