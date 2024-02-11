@@ -136,6 +136,18 @@ register(
 )
 
 register(
+    'ML3-v2',
+    entry_point='environments.metaworld_envs.ml3:ML3Env',
+    max_episode_steps=500
+)
+
+register(
+    'ML3_test-v2',
+    entry_point='environments.metaworld_envs.ml3:ML3TestEnv',
+    max_episode_steps=500
+)
+
+register(
     'ML1_test-v2',
     entry_point='environments.metaworld_envs.ml1:ML1TestEnv',
     max_episode_steps=500

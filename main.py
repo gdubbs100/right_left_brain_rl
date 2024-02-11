@@ -11,7 +11,7 @@ import torch
 
 # get configs
 from config.metaworld_config import \
-    args_ML10_rl2, args_CustomML10_rl2, args_ML1_rl2, args_CustomML10_varibad
+    args_ML10_rl2, args_CustomML10_rl2, args_ML1_rl2, args_CustomML10_varibad, args_ML3_rl2
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
 from metalearner import MetaLearner
@@ -41,6 +41,9 @@ def main():
             assert args.num_processes % 10 == 0, "num_processes should be a multiple of 10 for ML10 envs"
         elif env == 'ML1_rl2':
             args = args_ML1_rl2.get_args(rest_args)
+        elif env == 'ML3_rl2':
+            args = args_ML3_rl2.get_args(rest_args)
+            assert args.num_processes % 3 == 0, "num_processes should be a multiple of 3 for ML3 envs"
         else:
             raise Exception(f"Invalid Environment: {env}")
         args.load_model_from_checkpoint = load_model_from_checkpoint

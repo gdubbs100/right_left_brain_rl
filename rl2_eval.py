@@ -4,7 +4,7 @@ import datetime
 import json
 import os
 
-from environments.custom_metaworld_benchmark import CustomML10
+from environments.custom_metaworld_benchmark import CustomML10, ML3
 
 from utils.rl2_eval_utils import *
 from utils.helpers import boolean_argument
@@ -55,6 +55,8 @@ def main():
 
     elif args.benchmark == 'ML1':
         benchmark = metaworld.ML1('reach-v2')
+    elif args.benchmark == 'ML3':
+        benchmark = ML3()
     else:
         raise ValueError(f"{args.benchmark} is not available, please choose: CustomML10 or ML10 ML1")
 
