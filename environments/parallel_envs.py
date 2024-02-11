@@ -82,7 +82,7 @@ def make_vec_envs(env_name, seed, num_processes, gamma,
     :param ret_rms: running return and std for rewards
     """
     ## hacky work around
-    if 'ML10' in env_name:
+    if ('ML10' in env_name) or ('ML3' in env_name):
         # print('making metaworld env')
         envs = [make_metaworld_env(env_id=env_name, 
                 task_id = i,

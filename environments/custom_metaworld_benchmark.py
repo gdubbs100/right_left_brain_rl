@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from metaworld import Benchmark, _make_tasks, _ML_OVERRIDE
+from metaworld import Benchmark, _make_tasks, _ML_OVERRIDE, _MT_OVERRIDE
 from metaworld.envs.mujoco.env_dict import ALL_V2_ENVIRONMENTS
 from metaworld.envs.mujoco.sawyer_xyz.v2 import (
     SawyerBasketballEnvV2,
@@ -134,7 +134,75 @@ class CustomML10(Benchmark):
         )
 
 
-## TODO: create CW benchmark
-## CW Benchmark
-## create a standard benchmark with CW classes
-## but should we use the MT or the ML envs? potentially have a setting for both?
+## ML3 BENCHMARK ##
+## for RL2 training - test benchmark uses _MT_OVERRIDE to place goals available at test time for bicameral
+ML3_V2 = OrderedDict(
+    (
+        (
+            "train",
+            OrderedDict(
+                (
+                    ("reach-v2", SawyerReachEnvV2),
+                    ("push-v2", SawyerPushEnvV2),
+                    ("pick-place-v2", SawyerPickPlaceEnvV2),
+                    )
+                ),
+            ),
+        (
+            "test",
+            OrderedDict(
+                (
+                    ("reach-v2", SawyerReachEnvV2),
+                    ("push-v2", SawyerPushEnvV2),
+                    ("pick-place-v2", SawyerPickPlaceEnvV2),
+                    ("door-open-v2", SawyerDoorEnvV2),
+                    ("button-press-v2", SawyerButtonPressEnvV2),
+                    ("faucet-open-v2", SawyerFaucetOpenEnvV2)
+                    )
+                )
+        )
+    )
+)
+
+ml3_train_args_kwargs = {
+    key:dict(
+        args = [],
+        kwargs = {
+            'task_id': list(ALL_V2_ENVIRONMENTS.keys()).index(key)
+        }
+    )
+    for key, _ in ML3_V2["train"].items()
+}
+
+ml3_test_args_kwargs = {
+    key:dict(
+        args = [],
+        kwargs = {
+            'task_id': list(ALL_V2_ENVIRONMENTS.keys()).index(key)
+        }
+    )
+    for key, _ in ML3_V2["test"].items()
+}
+
+ML3_ARGS_KWARGS = dict(
+    train = ml3_train_args_kwargs,
+    test = ml3_test_args_kwargs
+)
+
+class ML3(Benchmark):
+    def __init__(self, seed=None):
+        super().__init__()
+        self._train_classes = ML3_V2["train"]
+        self._test_classes = ML3_V2["test"]
+        train_kwargs = ml3_train_args_kwargs
+
+        
+        self._train_tasks = _make_tasks(
+            self._train_classes, train_kwargs, _ML_OVERRIDE, seed=seed
+        )
+
+        ## use _MT_OVERRIDE to get test tasks
+        test_kwargs = ml3_test_args_kwargs
+        self._test_tasks = _make_tasks(
+            self._test_classes, test_kwargs, _MT_OVERRIDE, seed=(seed + 1 if seed is not None else seed)
+        )
