@@ -16,6 +16,7 @@ from utils import helpers as utl
 from utils.custom_helpers import get_args_from_config, freeze_parameters
 from utils.custom_logger import CustomLogger
 from environments.custom_env_utils import prepare_parallel_envs, prepare_base_envs
+from environments.custom_metaworld_benchmark import ML3
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -50,7 +51,11 @@ class ContinualLearner:
         self.normalise_rewards = normalise_rewards
 
         ## initialise the envs
-        self.raw_train_envs = prepare_base_envs(task_names, randomization=randomization)
+        self.raw_train_envs = prepare_base_envs(
+            task_names, 
+            benchmark=ML3(),
+            task_set = 'test', # we train on the test set of ML3 for bicameral
+            randomization=randomization)
 
         ## get unique task names in order:
         _, idx = np.unique(task_names, return_index=True)
@@ -70,7 +75,8 @@ class ContinualLearner:
         # only eval on unique envs
         self.raw_test_envs = prepare_base_envs(
             self.task_names, 
-            randomization=randomization
+            benchmark=ML3(),
+            task_set = 'test', # we train on the test set of ML3 for bicameral
         )
 
         # set params for runs
