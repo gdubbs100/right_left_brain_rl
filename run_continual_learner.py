@@ -50,7 +50,7 @@ def main():
     parser.add_argument('--gamma', type=float, default=0.99, help = "discount rate")
     parser.add_argument('--tau', type=float, default=0.97, help="discount rate for GAE")
     parser.add_argument('--normalise_rewards', type=boolean_argument, default=True, help="normalise rewards")
-    parser.add_argument('--context_window', default=None, help="Determines window size for bptt. None means use max")
+    parser.add_argument('--context_window', type = int, default=None, help="Determines window size for bptt. None means use max")
 
     parser.add_argument('--value_loss_coef', type=float, default=1, help="coefficient applied to the value loss")
     parser.add_argument('--use_huberloss', type=boolean_argument, default=False, help="use huber loss instead of MSE")
