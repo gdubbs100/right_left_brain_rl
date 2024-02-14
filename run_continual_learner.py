@@ -16,6 +16,8 @@ def main():
     ### get args
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--run_name', type = str, default = '', help = 'Give a name to your run for ease of logging')
+
     parser.add_argument('--algorithm', type = str, default='left_only', help='type of algorithm to run, choose: left_only, right_only, bicameral')
     parser.add_argument('--run_folder', help = 'folder from which to load a network - requires config.json if left_only or bicameral, requires policy and encoder networks if right_only')
     parser.add_argument('--log_folder', default='./logs/continual_learning/')

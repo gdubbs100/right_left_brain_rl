@@ -18,7 +18,7 @@ class CustomLogger:
 
         self.log_dir = os.path.join(
             log_dir,
-            'CL' + '_' + self.args.algorithm + datetime.datetime.now().strftime('_%d%m_%H%M%S')
+            self.args.run_name + '_' + self.args.algorithm + datetime.datetime.now().strftime('_%d%m_%H%M%S')
         )
 
         self.train_csv_dir = self.log_dir + '/train_results.csv'
