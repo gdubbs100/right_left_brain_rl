@@ -155,9 +155,9 @@ ML3_V2 = OrderedDict(
                     ("reach-v2", SawyerReachEnvV2),
                     ("push-v2", SawyerPushEnvV2),
                     ("pick-place-v2", SawyerPickPlaceEnvV2),
-                    ('reach-wall-v2', SawyerReachWallEnvV2)
-                    ('push-wall-v2', SawyerPushWallEnvV2)
-                    ('pick-place-wall-v2', SawyerPickPlaceWallEnvV2)
+                    ('reach-wall-v2', SawyerReachWallEnvV2),
+                    ('push-wall-v2', SawyerPushWallEnvV2),
+                    ('pick-place-wall-v2', SawyerPickPlaceWallEnvV2),
                     ("door-open-v2", SawyerDoorEnvV2),
                     ("button-press-v2", SawyerButtonPressEnvV2),
                     ("faucet-open-v2", SawyerFaucetOpenEnvV2)
