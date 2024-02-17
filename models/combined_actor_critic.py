@@ -66,18 +66,22 @@ class BiHemActorCritic(nn.Module):
                 init_right_value=init_right_value
             )
         else:
+            ## TODO: need to get the right dims and class here
             self.gating_network = GatingNetwork(
                 dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
             )
+        
         self.logstd = nn.Parameter(np.log(torch.zeros(dim_action) + init_std))
         self.min_std = torch.tensor([1.0e-6]).to(device)
         # self.max_std = torch.tensor([1.0e6]).to(device)
         # self.std = torch.tensor([init_std]).to(device)
     
-    def encoder(self, action, state, reward, hidden_state, return_prior = False, sample = False, detach_every = None):
+    def encoder(self, action, state, reward, hidden_state, value_errors, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
-            left_hidden_state = hidden_state[0]
-            right_hidden_state = hidden_state[1]
+            gate_hidden_state = hidden_state[0]
+            left_hidden_state = hidden_state[1]
+            right_hidden_state = hidden_state[2]
+            
         else:
             raise ValueError
 
@@ -99,23 +103,37 @@ class BiHemActorCritic(nn.Module):
             sample = sample,
             detach_every=detach_every
         )
-        ## TODO: add gating encoder?
+        ## include prior gating values?
+        gate_latent, gate_hidden_state = self.gating_network.encoder(
+            action, state, value_errors[0], value_errors[1], gate_hidden_state
+        )
         
-        return (left_latent_mean, left_latent_logvar, left_hidden_state), (right_latent_mean, right_latent_logvar, right_hidden_state)
+        return (
+            (gate_latent, gate_hidden_state),
+            (left_latent_mean, left_latent_logvar, left_hidden_state), 
+            (right_latent_mean, right_latent_logvar, right_hidden_state)
+        )
     
     def prior(self, num_processes):
         _, left_latent_mean, left_latent_logvar, left_hidden_state = self.left_actor_critic.encoder.prior(num_processes)
         _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder.prior(num_processes)
-        ## TODO: add gating encoder?
         
-        return (left_latent_mean, left_latent_logvar, left_hidden_state), (right_latent_mean, right_latent_logvar, right_hidden_state)
+        gate_latent, gate_hidden_state = self.gating_network.prior(num_processes)
+        
+        return (
+            (gate_latent, gate_hidden_state),
+            (left_latent_mean, left_latent_logvar, left_hidden_state), 
+            (right_latent_mean, right_latent_logvar, right_hidden_state)
+        )
     
 
     def policy(self, state, latent, belief=None, task=None, deterministic=False):
 
         if isinstance(latent, tuple):
-            left_latent = latent[0]
-            right_latent = latent[1]
+            gate_latent = latent[0]
+            left_latent = latent[1]
+            right_latent = latent[2]
+            
         else:
             raise ValueError
         
@@ -132,7 +150,7 @@ class BiHemActorCritic(nn.Module):
         right_action_mean = self.right_actor_critic.policy.dist.fc_mean(right_actor_features)
         
         # maybe gate network should take task? take combined latents and current state?
-        left_gate_value, right_gate_value = self.gating_network(state, left_latent, right_latent)
+        left_gate_value, right_gate_value = self.gating_network.gating_function(gate_latent)
 
         # combine action and value estimate
         combined_action_means = left_gate_value * left_action_mean + right_gate_value * right_action_mean
@@ -146,7 +164,7 @@ class BiHemActorCritic(nn.Module):
         else:
             actions = dist.sample() ## assumes not deterministic
 
-        return combined_values, actions, dist, (left_gate_value, right_gate_value)
+        return (combined_values, left_value, right_value), actions, dist, (left_gate_value, right_gate_value)
     
     def act(self, state, latent, belief=None, task=None, deterministic=False):
         values, actions, _, gating_values = self.policy(state, latent, None, None, deterministic = deterministic)
@@ -165,19 +183,21 @@ class BiHemActorCritic(nn.Module):
         dist_entropy = dist.entropy().mean()
         return values, action_log_probs, dist_entropy, gating_values
 
-    def evaluate_actions_by_hemisphere(self, state, latent, belief, task, action):
-        """Call policy eval, set task, belief to None"""
-        if isinstance(latent, tuple):
-            left_latent = latent[0]
-            right_latent = latent[1]
-        else:
-            raise ValueError
+    # def evaluate_actions_by_hemisphere(self, state, latent, belief, task, action):
+    #     """Call policy eval, set task, belief to None"""
+    #     if isinstance(latent, tuple):
+    #         left_latent = latent[0]
+    #         right_latent = latent[1]
+    #     else:
+    #         raise ValueError
 
-        ## get left v, log_probs, entropy
-        left_value, left_logprobs, left_entropy = self.left_actor_critic\
-            .evaluate_actions(state, left_latent, None, None, action)
-        ## get right value, log_probs, entropy
-        right_value, right_logprobs, right_entropy = self.right_actor_critic\
-            .evaluate_actions(state, right_latent, None, None, action)
+    #     ## get left v, log_probs, entropy
+    #     left_value, left_logprobs, left_entropy = self.left_actor_critic\
+    #         .evaluate_actions(state, left_latent, None, None, action)
+    #     ## get right value, log_probs, entropy
+    #     right_value, right_logprobs, right_entropy = self.right_actor_critic\
+    #         .evaluate_actions(state, right_latent, None, None, action)
 
-        return (left_value, left_logprobs, left_entropy), (right_value, right_logprobs, right_entropy)
+    #     return (left_value, left_logprobs, left_entropy), (right_value, right_logprobs, right_entropy)
+
+
