@@ -272,7 +272,7 @@ class BiHemPPO:
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
                 # Reshape to do in a single forward pass for all steps
-                values, action_log_probs, dist_entropy, (left_gate_value, right_gate_value) = \
+                (values, _, _), action_log_probs, dist_entropy, (left_gate_value, right_gate_value) = \
                     self.actor_critic.evaluate_actions(
                         state = state_batch, latent=latent_batch,
                         belief = None, task = None,
@@ -308,11 +308,6 @@ class BiHemPPO:
                 # zero out the gradients
                 self.optimiser.zero_grad()
 
-                # compute gating penalty (use logs for stability) (?)
-                # gating_penalty = (
-                #     np.log(self.gating_beta + 1.0e-5) + \
-                #     self.gating_alpha * (torch.log(right_gate_value) - torch.log(left_gate_value))
-                # ).mean()
                 if self.use_gating_penalty:
                     gating_penalty = (
                         self.gating_beta * \
@@ -363,55 +358,62 @@ class BiHemPPO:
         return self.actor_critic.get_value(state, latent, belief, task)
     
     def get_latent(self, action, state, reward, hidden_state, return_prior = False):
-        left, right = self.actor_critic.encoder(action, state, reward, hidden_state, return_prior = return_prior)
+        gate, left, right = self.actor_critic.encoder(action, state, reward, hidden_state, return_prior = return_prior)
         left_latent = torch.cat((left[0].clone(), left[1].clone()), dim = -1)
         right_latent = torch.cat((right[0].clone(), right[1].clone()), dim = -1)
         ## assume always add non-linearity to latent
-        latent = (F.relu(left_latent[None, :]), F.relu(right_latent[None, :]))
-        hidden_state = (left[-1], right[-1])
+        latent = (F.relu(gate[0][None, :]),F.relu(left_latent[None, :]), F.relu(right_latent[None, :]))
+        hidden_state = (gate[1], left[-1], right[-1])
         return latent, hidden_state
     
     def get_prior(self, num_processes):
-        left, right = self.actor_critic.prior(num_processes)
+        gate, left, right = self.actor_critic.prior(num_processes)
         left_latent = torch.cat((left[0].clone(), left[1].clone()), dim = -1)
         right_latent = torch.cat((right[0].clone(), right[1].clone()), dim = -1)
         ## assume always add non-linearity to latent
-        latent = (F.relu(left_latent), F.relu(right_latent))
-        hidden_state = (left[-1], right[-1])
+        latent = (F.relu(gate[0]), F.relu(left_latent), F.relu(right_latent))
+        hidden_state = (gate[1], left[-1], right[-1])
         return latent, hidden_state
     
     ## This is a bit inconsistent with the rest of the getting of latents and stuff
     def _recompute_embeddings(self, policy_storage, sample, update_idx, detach_every):
         left_latent = [policy_storage.left_latent[0].detach().clone()]
         left_latent[0].requires_grad = True
-
-        right_latent = [policy_storage.right_latent[0].detach().clone()]
+        gate_latent = [policy_storage.gate_latent[0].detach().clone()]
+        gate_latent[0].requires_grad = True
         ## we don't want the right latent to have a grad!!
-        ## may still need to do more - e.g. freeze the weights of the right network
-        # right_latent[0].requires_grad = True
+        right_latent = [policy_storage.right_latent[0].detach().clone()]
+
+
 
         left_h = policy_storage.left_hidden_states[0].detach()
         right_h = policy_storage.right_hidden_states[0].detach()
+        gate_h = policy_storage.gate_hidden_states[0].detach()
         for i in range(policy_storage.actions.shape[0]):
             # reset hidden state of the GRU when we reset the task
             left_h = self.actor_critic.left_actor_critic.encoder.reset_hidden(left_h, policy_storage.done[i])
             right_h = self.actor_critic.right_actor_critic.encoder.reset_hidden(right_h, policy_storage.done[i])
+            gate_h = self.actor_critic.gating_network.encoder.reset_hidden(gate_h, policy_storage.done[i])
             # not sure why this is i + 1?
             # h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i + 1])
 
-            left, right = self.actor_critic.encoder(
+            gate, left, right = self.actor_critic.encoder(
                 policy_storage.actions.float()[i:i + 1],
                 policy_storage.next_state[i:i + 1],
                 policy_storage.rewards_raw[i:i + 1],
-                (left_h, right_h),
+                (gate_h, left_h, right_h),
+                ## TODO: create value error function (e.g. make it a polynomial?)
+                (policy_storage.rewards_raw[i:i + 1] - policy_storage.left_values[i:i + 1],
+                 policy_storage.rewards_raw[i:i + 1] - policy_storage.right_values[i:i + 1])
                 sample=sample,
                 return_prior=False,
                 detach_every=detach_every
             )
-            left_h, right_h = left[-1], right[-1]
+            gate_h, left_h, right_h = gate_h[-1], left[-1], right[-1]
 
 
             ## apply the nonlinearity manually
+            gate_latent.append(F.relu(gate[0])[None, :])
             left_latent.append(F.relu(torch.cat((left[0], left[1]), dim = -1)[None,:]))
             right_latent.append(F.relu(torch.cat((right[0], right[1]), dim = -1)[None,:]))
 
@@ -419,11 +421,14 @@ class BiHemPPO:
             try:
                 assert (torch.cat(policy_storage.left_latent) - torch.cat(left_latent)).sum() == 0
                 assert (torch.cat(policy_storage.right_latent) - torch.cat(right_latent)).sum() == 0
+                assert (torch.cat(policy_storage.gate_latent) - torch.cat(gate_latent)).sum() == 0
 
             except AssertionError:
                 warnings.warn('You are not recomputing the embeddings correctly!')
         
         policy_storage.left_latent = left_latent
+        policy_storage.gate_latent = gate_latent
+
         ## probably don't need to do this as we are not attaching gradients to the right...
         policy_storage.right_latent = right_latent
 
@@ -494,5 +499,4 @@ class BiHemPPO:
                 #     (left_gate_value * left_action_loss + right_gate_value + right_action_loss).mean()
                 
                 # dist_entropy = (left_gate_value * left_entropy + right_gate_value * right_entropy).mean()
-
 

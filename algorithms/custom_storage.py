@@ -14,6 +14,12 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 def _flatten_helper(T, N, _tensor):
     return _tensor.reshape(T * N, *_tensor.size()[2:])
 
+def value_checker(value_preds):
+    if isinstance(value_preds, list):
+        return value_preds[0].detach()
+    else:
+        return value_preds.detach()
+
 ### TODO: change the name
 class CustomOnlineStorage(object):
     def __init__(self,
@@ -225,8 +231,8 @@ class BiHemOnlineStorage(object):
                  num_steps, num_processes,
                  state_dim, belief_dim, task_dim,
                  action_space,
-                 left_hidden_size, right_hidden_size,
-                 left_latent_dim, right_latent_dim,
+                 gate_hidden_size, left_hidden_size, right_hidden_size,
+                 gate_latent_dim, left_latent_dim, right_latent_dim,
                  normalise_rewards
                 ):
 
@@ -245,16 +251,19 @@ class BiHemOnlineStorage(object):
         # this will include s_0 when state was reset (hence num_steps+1)
         self.prev_state = torch.zeros(num_steps + 1, num_processes, state_dim)
 
+        self.gate_latent_dim = gate_latent_dim
         self.left_latent_dim = left_latent_dim
         self.right_latent_dim = right_latent_dim
+        self.gate_latent = []
         self.left_latent = []
         self.right_latent = []
         # hidden states of RNN (necessary if we want to re-compute embeddings)
+        self.gate_hidden_size = gate_hidden_size
         self.left_hidden_size = left_hidden_size
         self.right_hidden_size = right_hidden_size
-
-        self.left_hidden_states = torch.zeros(num_steps + 1, num_processes, left_hidden_size)
-        self.right_hidden_states = torch.zeros(num_steps + 1, num_processes, right_hidden_size)
+        self.gate_hidden_states = torch.zeros(num_steps + 1, num_processes, self.gate_hidden_size)
+        self.left_hidden_states = torch.zeros(num_steps + 1, num_processes, self.left_hidden_size)
+        self.right_hidden_states = torch.zeros(num_steps + 1, num_processes, self.right_hidden_size)
 
         self.beliefs = None
         self.tasks = None
@@ -280,6 +289,8 @@ class BiHemOnlineStorage(object):
 
         # values and returns
         self.value_preds = torch.zeros(num_steps + 1, num_processes, 1)
+        self.left_value_preds = torch.zeros(num_steps + 1, num_processes, 1)
+        self.right_value_preds = torch.zeros(num_steps + 1, num_processes, 1)
         self.returns = torch.zeros(num_steps + 1, num_processes, 1)
 
         self.to_device()
@@ -287,8 +298,10 @@ class BiHemOnlineStorage(object):
     def to_device(self, device = device):
 
         self.prev_state = self.prev_state.to(device)
+        self.gate_latent = [t.to(device) for t in self.gate_latent]
         self.left_latent = [t.to(device) for t in self.left_latent]
         self.right_latent = [t.to(device) for t in self.right_latent]
+        self.gate_hidden_states = self.gate_hidden_states.to(device)
         self.left_hidden_states = self.left_hidden_states.to(device)
         self.right_hidden_states = self.right_hidden_states.to(device)
         self.next_state = self.next_state.to(device)
@@ -297,6 +310,8 @@ class BiHemOnlineStorage(object):
         self.done = self.done.to(device)
         self.masks = self.masks.to(device)
         self.value_preds = self.value_preds.to(device)
+        self.left_value_preds = self.left_value_preds.to(device)
+        self.right_value_preds = self.right_value_preds.to(device)
         self.returns = self.returns.to(device)
         self.actions = self.actions.to(device)
 
@@ -337,10 +352,20 @@ class BiHemOnlineStorage(object):
         self.actions[self.step] = actions.detach().clone()
         self.rewards_raw[self.step].copy_(rewards_raw)
         self.rewards_normalised[self.step].copy_(rewards_normalised)
-        if isinstance(value_preds, list):
-            self.value_preds[self.step].copy_(value_preds[0].detach())
+        if isinstance(value_preds, tuple):
+            combined_values = value_preds[0]
+            left_values = value_preds[1]
+            right_values = value_preds[2]
+
+            self.value_preds[self.step].copy_(value_checker(combined_values))
+            self.left_value_preds[self.step].copy_(value_checker(left_values))
+            self.right_value_preds[self.step].copy_(value_checker(right_values))
+            # if isinstance(value_preds, list):
+            #     self.value_preds[self.step].copy_(value_preds[0].detach())
+            # else:
+            #     self.value_preds[self.step].copy_(value_preds.detach())
         else:
-            self.value_preds[self.step].copy_(value_preds.detach())
+            raise ValueError
         self.masks[self.step + 1].copy_(masks)
         self.done[self.step + 1].copy_(done)
         self.step = (self.step + 1) % self.num_steps
@@ -349,8 +374,10 @@ class BiHemOnlineStorage(object):
         ## TODO: should we copy the last state over? this is just an RL2 meta-training thing?
         ## set to torch.zeros_like for now
         self.prev_state[0].copy_(torch.zeros_like(self.prev_state[-1]))
+        self.gate_latent = []
         self.left_latent = []
         self.right_latent = []
+        self.gate_hidden_states[0].copy_(torch.zeros_like(self.gate_hidden_states[-1]))
         self.left_hidden_states[0].copy_(torch.zeros_like(self.left_hidden_states[-1]))
         self.right_hidden_states[0].copy_(torch.zeros_like(self.right_hidden_states[-1]))
         self.done[0].copy_(torch.zeros_like(self.done[-1]))
@@ -403,10 +430,11 @@ class BiHemOnlineStorage(object):
     
     def before_update(self, policy):
         # this is about building the computation graph during training
+        gate_latent = torch.cat(self.gate_latent[:-1])
         left_latent = torch.cat(self.left_latent[:-1])
         right_latent = torch.cat(self.right_latent[:-1])
         _, action_log_probs, _, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         (left_latent, right_latent),
+                                                         (gate_latent, left_latent, right_latent),
                                                          None,
                                                          None,
                                                          self.actions)
@@ -434,8 +462,10 @@ class BiHemOnlineStorage(object):
         for indices in sampler:
 
             state_batch = self.prev_state[:-1].reshape(-1, *self.prev_state.size()[2:])[indices]
-            # cat_latent = torch.cat(self.latent[:-1])
-            # latent_batch = cat_latent.reshape(-1, *cat_latent.size()[2:])[indices]
+
+            gate_latent = torch.cat(self.gate_latent[:-1])
+            gate_latent_batch = gate_latent.reshape(-1, *gate_latent.size()[2:])[indices]
+
             left_latent = torch.cat(self.left_latent[:-1])
             left_latent_batch = left_latent.reshape(-1, *left_latent.size()[2:])[indices]
 
@@ -444,6 +474,8 @@ class BiHemOnlineStorage(object):
             actions_batch = self.actions.reshape(-1, self.actions.size(-1))[indices]
 
             value_preds_batch = self.value_preds[:-1].reshape(-1, 1)[indices]
+            left_preds_batch = self.left_value_preds[:-1].reshape(-1, 1)[indices]
+            right_preds_batch = self.right_value_preds[:-1].reshape(-1, 1)[indices]
             return_batch = self.returns[:-1].reshape(-1, 1)[indices]
 
             old_action_log_probs_batch = self.action_log_probs.reshape(-1, 1)[indices]
@@ -452,6 +484,8 @@ class BiHemOnlineStorage(object):
             else:
                 adv_targ = advantages.reshape(-1, 1)[indices]
 
-            yield state_batch, actions_batch, (left_latent_batch, right_latent_batch), \
-                  value_preds_batch, return_batch, old_action_log_probs_batch, adv_targ
+            yield state_batch, actions_batch, \
+                (gate_latent_batch, left_latent_batch, right_latent_batch), \
+                (value_preds_batch, left_preds_batch, right_preds_batch), \
+                return_batch, old_action_log_probs_batch, adv_targ
             
