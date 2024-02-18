@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from models.policy import FixedNormal
-from models.gating_network import GatingNetwork, StepGatingNetwork
+from models.gating_network import GatingNetwork, StepGatingNetwork, EncoderGatingNetwork
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -47,7 +47,9 @@ class BiHemActorCritic(nn.Module):
             right_encoder, 
             dim_state,
             dim_action, 
-            init_std, 
+            init_std,
+            use_action_in_gate = False,
+            use_state_in_gate = False,
             use_gating_schedule = False,
             gating_schedule_type = None,
             gating_schedule_update = None,
@@ -66,17 +68,23 @@ class BiHemActorCritic(nn.Module):
                 init_right_value=init_right_value
             )
         else:
-            ## TODO: need to get the right dims and class here
-            self.gating_network = GatingNetwork(
-                dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
+            ## TODO: hidden_size, take_action, take_state, dim_action, dim_state
+            self.gating_network = EncoderGatingNetwork(
+                take_action=use_action_in_gate, 
+                take_state=use_state_in_gate,
+                dim_action = dim_action,
+                dim_state = dim_state
             )
+            # self.gating_network = GatingNetwork(
+            #     dim_state + left_encoder.latent_dim * 2 + right_encoder.latent_dim * 2
+            # )
         
         self.logstd = nn.Parameter(np.log(torch.zeros(dim_action) + init_std))
         self.min_std = torch.tensor([1.0e-6]).to(device)
         # self.max_std = torch.tensor([1.0e6]).to(device)
         # self.std = torch.tensor([init_std]).to(device)
     
-    def encoder(self, action, state, reward, hidden_state, value_errors, return_prior = False, sample = False, detach_every = None):
+    def encoder(self, action, state, reward, value_errors, hidden_state, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
             gate_hidden_state = hidden_state[0]
             left_hidden_state = hidden_state[1]

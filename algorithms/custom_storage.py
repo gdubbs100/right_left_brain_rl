@@ -332,19 +332,23 @@ class BiHemOnlineStorage(object):
 
         ## handle latents:
         if isinstance(latent, tuple):
-            left_latent = latent[0]
-            right_latent = latent[1]
+            gate_latent = latent[0]
+            left_latent = latent[1]
+            right_latent = latent[2]
         else:
             raise ValueError
+        self.gate_latent.append(gate_latent.detach().clone())
         self.left_latent.append(left_latent.detach().clone())
         self.right_latent.append(right_latent.detach().clone())
 
         ## handle hidden_states
         if isinstance(hidden_states, tuple):
-            left_hidden_states = hidden_states[0].squeeze()
-            right_hidden_states = hidden_states[1].squeeze()
+            gate_hidden_states = hidden_states[0].squeeze()
+            left_hidden_states = hidden_states[1].squeeze()
+            right_hidden_states = hidden_states[2].squeeze()
         else:
             raise ValueError
+        self.gate_hidden_states[self.step+1].copy_(gate_hidden_states.detach())
         self.left_hidden_states[self.step+1].copy_(left_hidden_states.detach())
         self.right_hidden_states[self.step+1].copy_(right_hidden_states.detach())
 
@@ -357,9 +361,9 @@ class BiHemOnlineStorage(object):
             left_values = value_preds[1]
             right_values = value_preds[2]
 
-            self.value_preds[self.step].copy_(value_checker(combined_values))
-            self.left_value_preds[self.step].copy_(value_checker(left_values))
-            self.right_value_preds[self.step].copy_(value_checker(right_values))
+            self.value_preds[self.step].copy_(combined_values.detach())
+            self.left_value_preds[self.step].copy_(left_values.detach())
+            self.right_value_preds[self.step].copy_(right_values.detach())
             # if isinstance(value_preds, list):
             #     self.value_preds[self.step].copy_(value_preds[0].detach())
             # else:
