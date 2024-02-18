@@ -357,12 +357,14 @@ class BiHemPPO:
     def get_value(self, state, latent, belief, task):
         return self.actor_critic.get_value(state, latent, belief, task)
     
-    def get_latent(self, action, state, reward, hidden_state, return_prior = False):
-        gate, left, right = self.actor_critic.encoder(action, state, reward, hidden_state, return_prior = return_prior)
+    def get_latent(self, action, state, reward, value_errors, hidden_state, return_prior = False):
+        gate, left, right = self.actor_critic.encoder(
+            action, state, reward, value_errors, hidden_state, return_prior = return_prior
+        )
         left_latent = torch.cat((left[0].clone(), left[1].clone()), dim = -1)
         right_latent = torch.cat((right[0].clone(), right[1].clone()), dim = -1)
         ## assume always add non-linearity to latent
-        latent = (F.relu(gate[0][None, :]),F.relu(left_latent[None, :]), F.relu(right_latent[None, :]))
+        latent = (F.relu(gate[0]),F.relu(left_latent[None, :]), F.relu(right_latent[None, :]))
         hidden_state = (gate[1], left[-1], right[-1])
         return latent, hidden_state
     
@@ -384,8 +386,6 @@ class BiHemPPO:
         ## we don't want the right latent to have a grad!!
         right_latent = [policy_storage.right_latent[0].detach().clone()]
 
-
-
         left_h = policy_storage.left_hidden_states[0].detach()
         right_h = policy_storage.right_hidden_states[0].detach()
         gate_h = policy_storage.gate_hidden_states[0].detach()
@@ -401,19 +401,20 @@ class BiHemPPO:
                 policy_storage.actions.float()[i:i + 1],
                 policy_storage.next_state[i:i + 1],
                 policy_storage.rewards_raw[i:i + 1],
-                (gate_h, left_h, right_h),
                 ## TODO: create value error function (e.g. make it a polynomial?)
-                (policy_storage.rewards_raw[i:i + 1] - policy_storage.left_values[i:i + 1],
-                 policy_storage.rewards_raw[i:i + 1] - policy_storage.right_values[i:i + 1])
+                value_errors = (
+                    (policy_storage.rewards_raw[i:i + 1] - policy_storage.left_value_preds[i:i + 1]),
+                    (policy_storage.rewards_raw[i:i + 1] - policy_storage.right_value_preds[i:i + 1])
+                ),
+                hidden_state=(gate_h[None, ...], left_h, right_h),
                 sample=sample,
                 return_prior=False,
                 detach_every=detach_every
             )
-            gate_h, left_h, right_h = gate_h[-1], left[-1], right[-1]
-
+            gate_h, left_h, right_h = gate[-1].squeeze(0), left[-1], right[-1]
 
             ## apply the nonlinearity manually
-            gate_latent.append(F.relu(gate[0])[None, :])
+            gate_latent.append(F.relu(gate[0]))
             left_latent.append(F.relu(torch.cat((left[0], left[1]), dim = -1)[None,:]))
             right_latent.append(F.relu(torch.cat((right[0], right[1]), dim = -1)[None,:]))
 
@@ -422,8 +423,8 @@ class BiHemPPO:
                 assert (torch.cat(policy_storage.left_latent) - torch.cat(left_latent)).sum() == 0
                 assert (torch.cat(policy_storage.right_latent) - torch.cat(right_latent)).sum() == 0
                 assert (torch.cat(policy_storage.gate_latent) - torch.cat(gate_latent)).sum() == 0
-
             except AssertionError:
+
                 warnings.warn('You are not recomputing the embeddings correctly!')
         
         policy_storage.left_latent = left_latent

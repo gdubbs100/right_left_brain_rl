@@ -36,7 +36,7 @@ class GatingEncoder(nn.Module):
                 num_layers=1,
                 )
         
-        self.fc = nn.Linear(self.input_dim, self.output_dim)
+        self.fc = nn.Linear(self.hidden_size, self.output_dim)
 
         ## not sure what this does, taken from encoder
         for name, param in self.gru.named_parameters():
@@ -84,18 +84,34 @@ class GatingEncoder(nn.Module):
 
     
 
-class EncoderGatingNetwork():
+class EncoderGatingNetwork(nn.Module):
 
-    def __init__(self, input_dim, output_dim, hidden_size, take_action, take_state):
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.hidden_size = hidden_size
+    def __init__(self, take_action, take_state, dim_action, dim_state):
+        super().__init__()
         self.take_action = take_action
         self.take_state = take_state
+        self.dim_action = dim_action
+        self.dim_state = dim_state
+
+        ## TODO: incorporate gating values?
+        ## input dim should be:
+        # left_error(1) + right_error(1) + action_dim (4) + state_dim (40) = 46
+        # +gateing_vals(2) = 48
+        self.latent_dim = 2 # latent is input dim - named latent to be consistent with rest of code
+        if self.take_action:
+            self.latent_dim += self.dim_action
+        if self.take_state:
+            self.latent_dim += self.dim_state
+        self.hidden_size = self.latent_dim
+        self.latent_dim *= 2 # hidden size is input
         self.encoder = GatingEncoder(
-            self.input_dim, self.output_dim, self.hidden_size, self.take_action, self.take_state
+            input_dim=self.latent_dim, 
+            output_dim=self.latent_dim, 
+            hidden_size=self.hidden_size, 
+            take_action=self.take_action, 
+            take_state=self.take_state
         )
-        self.gate = nn.Linear(self.output_dim, 2)
+        self.gate = nn.Linear(self.latent_dim, 2)
     
     def prior(self, batch_size):
         return self.encoder.prior(batch_size)
