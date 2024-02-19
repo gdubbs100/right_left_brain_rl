@@ -107,8 +107,10 @@ class ContinualLearner:
                     0, # what's this?
                     self.envs.action_space, 
                     ## BiHemOnlineStorage - have separate left / right encoder/ hidden dims
+                    gate_hidden_size=self.agent.actor_critic.gating_network.hidden_size,
                     left_hidden_size=self.agent.actor_critic.left_actor_critic.encoder.hidden_size, 
                     right_hidden_size=self.agent.actor_critic.right_actor_critic.encoder.hidden_size, 
+                    gate_latent_dim=self.agent.actor_critic.gating_network.latent_dim,
                     left_latent_dim=self.agent.actor_critic.left_actor_critic.encoder.latent_dim, 
                     right_latent_dim=self.agent.actor_critic.right_actor_critic.encoder.latent_dim, 
                     normalise_rewards=self.normalise_rewards # normalise rewards for policy - set to true, but implement
@@ -347,7 +349,7 @@ class ContinualLearner:
                         actions=action.double(),
                         rewards_raw=rew_raw.squeeze(0),
                         rewards_normalised=rew_normalised.squeeze(0),
-                        value_preds= (value.squeeze(0), left_value.squeeze(0), right_value.squeeze(0)),
+                        value_preds= value.squeeze(0),
                         masks=masks_done.squeeze(0), 
                         done=torch.from_numpy(done)[:,None].float(),
                         hidden_states = hidden_state.squeeze(),
@@ -363,7 +365,7 @@ class ContinualLearner:
                         actions=action.double(),
                         rewards_raw=rew_raw.squeeze(0),
                         rewards_normalised=rew_normalised.squeeze(0),
-                        value_preds=value.squeeze(0),
+                        value_preds=(value.squeeze(0), left_value.squeeze(0), right_value.squeeze(0)),
                         masks=masks_done.squeeze(0), 
                         done=torch.from_numpy(done)[:,None].float(),
                         hidden_states = hidden_state,
