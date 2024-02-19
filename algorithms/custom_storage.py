@@ -343,9 +343,9 @@ class BiHemOnlineStorage(object):
 
         ## handle hidden_states
         if isinstance(hidden_states, tuple):
-            gate_hidden_states = hidden_states[0].squeeze()
-            left_hidden_states = hidden_states[1].squeeze()
-            right_hidden_states = hidden_states[2].squeeze()
+            gate_hidden_states = hidden_states[0].squeeze(0)
+            left_hidden_states = hidden_states[1].squeeze(0)
+            right_hidden_states = hidden_states[2].squeeze(0)
         else:
             raise ValueError
         self.gate_hidden_states[self.step+1].copy_(gate_hidden_states.detach())

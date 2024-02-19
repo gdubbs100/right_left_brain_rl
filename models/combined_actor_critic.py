@@ -84,7 +84,7 @@ class BiHemActorCritic(nn.Module):
         # self.max_std = torch.tensor([1.0e6]).to(device)
         # self.std = torch.tensor([init_std]).to(device)
     
-    def encoder(self, action, state, reward, value_errors, hidden_state, return_prior = False, sample = False, detach_every = None):
+    def encoder(self, action, state, reward, value_errors, gate_values, hidden_state, return_prior = False, sample = False, detach_every = None):
         if isinstance(hidden_state, tuple):
             gate_hidden_state = hidden_state[0]
             left_hidden_state = hidden_state[1]
@@ -113,7 +113,7 @@ class BiHemActorCritic(nn.Module):
         )
         ## include prior gating values?
         gate_latent, gate_hidden_state = self.gating_network.encoder(
-            action, state, value_errors[0], value_errors[1], gate_hidden_state
+            action, state, value_errors[0], value_errors[1], gate_values[0], gate_values[1], gate_hidden_state
         )
         
         return (

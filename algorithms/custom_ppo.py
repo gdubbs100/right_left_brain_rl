@@ -357,14 +357,15 @@ class BiHemPPO:
     def get_value(self, state, latent, belief, task):
         return self.actor_critic.get_value(state, latent, belief, task)
     
-    def get_latent(self, action, state, reward, value_errors, hidden_state, return_prior = False):
+    def get_latent(self, action, state, reward, value_errors, gate_values, hidden_state, return_prior = False):
         gate, left, right = self.actor_critic.encoder(
-            action, state, reward, value_errors, hidden_state, return_prior = return_prior
+            action, state, reward, value_errors, gate_values, hidden_state, return_prior = return_prior
         )
         left_latent = torch.cat((left[0].clone(), left[1].clone()), dim = -1)
         right_latent = torch.cat((right[0].clone(), right[1].clone()), dim = -1)
         ## assume always add non-linearity to latent
         latent = (F.relu(gate[0]),F.relu(left_latent[None, :]), F.relu(right_latent[None, :]))
+
         hidden_state = (gate[1], left[-1], right[-1])
         return latent, hidden_state
     
@@ -374,6 +375,7 @@ class BiHemPPO:
         right_latent = torch.cat((right[0].clone(), right[1].clone()), dim = -1)
         ## assume always add non-linearity to latent
         latent = (F.relu(gate[0]), F.relu(left_latent), F.relu(right_latent))
+
         hidden_state = (gate[1], left[-1], right[-1])
         return latent, hidden_state
     
@@ -386,16 +388,26 @@ class BiHemPPO:
         ## we don't want the right latent to have a grad!!
         right_latent = [policy_storage.right_latent[0].detach().clone()]
 
+        ## initial latents
+        _gate_latent = gate_latent[0]
+        _left_latent = left_latent[0]
+        _right_latent = right_latent[0]
+
+        gate_h = policy_storage.gate_hidden_states[0].detach()
         left_h = policy_storage.left_hidden_states[0].detach()
         right_h = policy_storage.right_hidden_states[0].detach()
-        gate_h = policy_storage.gate_hidden_states[0].detach()
+        
         for i in range(policy_storage.actions.shape[0]):
             # reset hidden state of the GRU when we reset the task
             left_h = self.actor_critic.left_actor_critic.encoder.reset_hidden(left_h, policy_storage.done[i])
             right_h = self.actor_critic.right_actor_critic.encoder.reset_hidden(right_h, policy_storage.done[i])
-            gate_h = self.actor_critic.gating_network.encoder.reset_hidden(gate_h, policy_storage.done[i])
-            # not sure why this is i + 1?
-            # h = self.actor_critic.encoder.reset_hidden(h, policy_storage.done[i + 1])
+            gate_h = self.actor_critic.gating_network.reset_hidden(gate_h, policy_storage.done[i])
+
+            ## regenerate the values and gating values - don't need to attach to computation graph
+            with torch.no_grad():
+                values, _, gate_values = self.act(
+                    policy_storage.next_state[i:i + 1], 
+                    (_gate_latent, _left_latent, _right_latent), None, None)
 
             gate, left, right = self.actor_critic.encoder(
                 policy_storage.actions.float()[i:i + 1],
@@ -403,9 +415,10 @@ class BiHemPPO:
                 policy_storage.rewards_raw[i:i + 1],
                 ## TODO: create value error function (e.g. make it a polynomial?)
                 value_errors = (
-                    (policy_storage.rewards_raw[i:i + 1] - policy_storage.left_value_preds[i:i + 1]),
-                    (policy_storage.rewards_raw[i:i + 1] - policy_storage.right_value_preds[i:i + 1])
+                    (policy_storage.rewards_raw[i:i + 1] - values[1]),
+                    (policy_storage.rewards_raw[i:i + 1] - values[2])
                 ),
+                gate_values = gate_values,
                 hidden_state=(gate_h[None, ...], left_h, right_h),
                 sample=sample,
                 return_prior=False,
@@ -413,10 +426,14 @@ class BiHemPPO:
             )
             gate_h, left_h, right_h = gate[-1].squeeze(0), left[-1], right[-1]
 
+            _gate_latent = F.relu(gate[0])
+            _left_latent = F.relu(torch.cat((left[0], left[1]), dim = -1)[None, :])
+            _right_latent = F.relu(torch.cat((right[0], right[1]), dim = -1)[None,:])
+
             ## apply the nonlinearity manually
-            gate_latent.append(F.relu(gate[0]))
-            left_latent.append(F.relu(torch.cat((left[0], left[1]), dim = -1)[None,:]))
-            right_latent.append(F.relu(torch.cat((right[0], right[1]), dim = -1)[None,:]))
+            gate_latent.append(_gate_latent)
+            left_latent.append(_left_latent)
+            right_latent.append(_right_latent)
 
         if update_idx == 0:
             try:
