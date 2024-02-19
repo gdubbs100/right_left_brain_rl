@@ -190,6 +190,9 @@ class ContinualLearner:
                 self.envs.observation_space.shape[0] + 1, 
                 self.envs.action_space.shape[0],
                 init_std = args.init_std,
+                ## gating encoder args
+                use_action_in_gate = self.args.use_action_in_gate,
+                use_state_in_gate = self.args.use_state_in_gate,
                 ## gating schedule functions
                 use_gating_schedule = self.args.use_gating_schedule,
                 gating_schedule_type = self.args.gating_schedule_type,
@@ -278,11 +281,13 @@ class ContinualLearner:
 
                 if self.args.algorithm == 'bicameral':
                     assert (len(self.storage.left_latent) == 0) & (len(self.storage.right_latent) == 0)
-                    
-                    self.storage.left_hidden_states[:1].copy_(hidden_state[0])
-                    self.storage.right_hidden_states[:1].copy_(hidden_state[1])
-                    self.storage.left_latent.append(latent[0])
-                    self.storage.right_latent.append(latent[1])
+
+                    self.storage.gate_hidden_states[:1].copy_(hidden_state[0])
+                    self.storage.left_hidden_states[:1].copy_(hidden_state[1])
+                    self.storage.right_hidden_states[:1].copy_(hidden_state[2])
+                    self.storage.gate_latent.append(latent[0])
+                    self.storage.left_latent.append(latent[1])
+                    self.storage.right_latent.append(latent[2])
                 else:
                     assert len(self.storage.latent) == 0  # make sure we emptied buffers
                     self.storage.hidden_states[:1].copy_(hidden_state)
@@ -292,9 +297,10 @@ class ContinualLearner:
                 with torch.no_grad():
                     if self.args.algorithm == 'bicameral':
                         ## TODO: don't like unsqueeze obs but ok for now
-                        value, action, (left_gating_value, _) = self.agent.act(obs.unsqueeze(0), latent, None, None)
+                        (value, left_value, right_value), action, gate_values = \
+                            self.agent.act(obs.unsqueeze(0), latent, None, None)
                         ## collect gating values
-                        gating_values.append(left_gating_value.detach())
+                        gating_values.append(gate_values[0].detach())
                     else:
                         value, action = self.agent.act(obs, latent, None, None)
                         ## dummy gating value
@@ -302,6 +308,13 @@ class ContinualLearner:
 
                 next_obs, (rew_raw, rew_normalised), done, info = self.envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
+                
+                ## calculate value errors for left/right
+                if self.args.algorithm == 'bicameral':
+                    value_errors = (
+                        rew_raw - left_value,
+                        rew_raw - right_value
+                    )
 
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if _done else [1.0] for _done in done]).to(device)
@@ -312,12 +325,20 @@ class ContinualLearner:
                 successes.append(torch.tensor([i['success'] for i in info]))
 
                 with torch.no_grad():
-                    latent, hidden_state = self.agent.get_latent(
-                        action, next_obs, rew_raw, hidden_state, return_prior = False
-                    )
+                    if self.args.algorithm == 'bicameral':
+                        latent, hidden_state = self.agent.get_latent(
+                            action, next_obs, rew_raw, 
+                            value_errors, gate_values, hidden_state, 
+                            return_prior = False
+                        )
+
+                    else:
+                        latent, hidden_state = self.agent.get_latent(
+                            action, next_obs, rew_raw, hidden_state, return_prior = False
+                        )
                 
                 self.storage.next_state[step] = next_obs.clone()
-                ## TODO: need to figure out how to include gating values
+
                 if self.args.algorithm != 'bicameral':
                     self.storage.insert(
                         state=next_obs.squeeze(),
@@ -326,7 +347,7 @@ class ContinualLearner:
                         actions=action.double(),
                         rewards_raw=rew_raw.squeeze(0),
                         rewards_normalised=rew_normalised.squeeze(0),
-                        value_preds=value.squeeze(0),
+                        value_preds= (value.squeeze(0), left_value.squeeze(0), right_value.squeeze(0)),
                         masks=masks_done.squeeze(0), 
                         done=torch.from_numpy(done)[:,None].float(),
                         hidden_states = hidden_state.squeeze(),
@@ -354,20 +375,36 @@ class ContinualLearner:
                 step += 1
             
             with torch.no_grad():
-                latent, hidden_state = self.agent.get_latent(
-                    action, obs, rew_raw, hidden_state, return_prior = False
-                )
+                if self.args.algorithm=='bicameral':
+                    latent, hidden_state = self.agent.get_latent(
+                            action, next_obs, rew_raw, 
+                            value_errors, gate_values, hidden_state, 
+                            return_prior = False
+                        )
+                    
+                    ## only need final value for returns
+                    value, _, _ = self.agent.get_value(
+                        obs.unsqueeze(0),
+                        latent,
+                        None,
+                        None
+                    )
 
-                value = self.agent.get_value(
-                    obs.unsqueeze(0),
-                    latent,
-                    None,
-                    None
-                ).detach() # detach from computation graph
+                else:
+                    latent, hidden_state = self.agent.get_latent(
+                        action, obs, rew_raw, hidden_state, return_prior = False
+                    )
+
+                    value = self.agent.get_value(
+                        obs.unsqueeze(0),
+                        latent,
+                        None,
+                        None
+                    )
 
             # compute returns - use_proper_time_limits is false
             self.storage.compute_returns(
-                next_value = value,
+                next_value = value.detach(), # detach from computation graph
                 use_gae = True,
                 gamma = self.gamma,
                 tau = self.tau,
@@ -423,8 +460,8 @@ class ContinualLearner:
                  self.agent.actor_critic.gating_network.step()
 
             if (eps+1) % self.eval_every == 0:
-                print(f"Evaluating at Update: {eps}, with {frames} frames")
-                self.evaluate(current_task, frames)
+                # print(f"Evaluating at Update: {eps}, with {frames} frames")
+                # self.evaluate(current_task, frames)
 
                 ## save the network
                 self.logger.save_network(self.agent.actor_critic)
