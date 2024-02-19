@@ -45,16 +45,24 @@ class GatingEncoder(nn.Module):
             elif 'weight' in name:
                 nn.init.orthogonal_(param)
 
-    def forward(self, action, state, left_reward_err, right_reward_err, hidden_state):
+    def forward(self, action, state, left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state):
 
         if self.take_action and self.take_state:
-            x = torch.cat((action, state, left_reward_err, right_reward_err, hidden_state), dim = -1)
+            x = torch.cat(
+                (action, state, left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state), 
+                dim = -1)
         elif self.take_action and not self.take_state:
-            x = torch.cat((action, left_reward_err, right_reward_err, hidden_state), dim = -1)
+            x = torch.cat(
+                (action, left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state), 
+                dim = -1)
         elif not self.take_action and self.take_state:
-            x = torch.cat((state, left_reward_err, right_reward_err, hidden_state), dim = -1)
+            x = torch.cat(
+                (state, left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state), 
+                dim = -1)
         else:
-            x = torch.cat((left_reward_err, right_reward_err, hidden_state), dim = -1)
+            x = torch.cat(
+                (left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state), 
+                dim = -1)
 
         hidden_state, _ = self.gru(x)
         # not quite sure why we do this - based on encoder
@@ -97,7 +105,7 @@ class EncoderGatingNetwork(nn.Module):
         ## input dim should be:
         # left_error(1) + right_error(1) + action_dim (4) + state_dim (40) = 46
         # +gateing_vals(2) = 48
-        self.latent_dim = 2 # latent is input dim - named latent to be consistent with rest of code
+        self.latent_dim = 4 # latent is input dim - named latent to be consistent with rest of code
         if self.take_action:
             self.latent_dim += self.dim_action
         if self.take_state:
@@ -134,9 +142,13 @@ class StepGatingNetwork:
         self.left = 1 - self.right
         self.min_right_value = min_right_value
 
-    def gating_function(self, state, left_latent, right_latent):
-        inputs = torch.cat((left_latent, right_latent, state), dim=-1)
-        outputs = torch.zeros((*inputs.size()[:-1], 2))
+        ## dummy variables
+        self.hidden_size = 1
+        self.latent_dim = 1
+
+    def gating_function(self, gate_latent):
+        # inputs = torch.cat((left_latent, right_latent, state), dim=-1)
+        outputs = torch.zeros((*gate_latent.size()[:-1], 2))
         outputs[...,:1] = self.left
         outputs[...,1:] = self.right
         outputs = outputs.to(device)
@@ -153,5 +165,17 @@ class StepGatingNetwork:
         
         # update left
         self.left = 1 - self.right
+
+    ## dummy functions
+    def encoder(self, action, state, left_reward_err, right_reward_err, left_gate_value, right_gate_value, hidden_state):
+        return torch.zeros_like(hidden_state).to(device), torch.zeros_like(hidden_state).to(device)
+    
+    def prior(self, num_processes):
+        return torch.zeros((1, num_processes, self.latent_dim)).to(device), torch.zeros((1, num_processes, self.hidden_size)).to(device)
+    
+    def reset_hidden(self, hidden_state, done):
+        return torch.zeros_like(hidden_state).to(device)
+    
+    
 
 
