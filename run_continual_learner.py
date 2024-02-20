@@ -36,6 +36,8 @@ def main():
     parser.add_argument('--use_gating_penalty', type = boolean_argument, default = False, help="apply a gating penalty to the loss function")
     parser.add_argument('--gating_alpha', type=float, default=0.75, help="exponent of gating penalty")
     parser.add_argument('--gating_beta', type = float, default=0.1, help="multiplicative parameter for gating penalty")
+    parser.add_argument('--use_action_in_gate', type = boolean_argument, default = False, help='pass action to gating encoder')
+    parser.add_argument('--use_state_in_gate', type = boolean_argument, default=False, help='pass state to gating encoder')
     parser.add_argument('--use_gating_schedule', type = boolean_argument, default = False, help="use an update schedule for gating values")
     parser.add_argument('--gating_schedule_type', type = str, default='addative', help='set to addative or multiplicative. Addative subtracts a constant, multiplcative reduces by a factor.')
     parser.add_argument('--gating_schedule_update', type=float, default=0.05, help="Constant or factor to reduce right gating value by when using schedule")
