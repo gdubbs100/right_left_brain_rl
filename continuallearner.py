@@ -85,8 +85,9 @@ class ContinualLearner:
 
         # create network and agent
         self.agent, self.left_init_args, self.right_init_args = self.init_agent(self.args)
-
-        if self.args.algorithm != 'bicameral':
+        if self.args.algorithm == 'random':
+            self.storage = None
+        elif self.args.algorithm != 'bicameral':
             self.storage = CustomOnlineStorage(
                         self.rollout_len, 
                         self.num_processes, 
@@ -252,8 +253,10 @@ class ContinualLearner:
                 use_clipped_value_loss=self.args.use_clipped_value_loss,
                 context_window=args.context_window
             )
+        elif self.args.algorithm == 'random':
+            agent, left_init_args, right_init_args = None, None, None
         else:
-            raise NotImplementedError("Set algorithm to one of left_only, right_only or bicameral")
+            raise NotImplementedError("Set algorithm to one of left_only, right_only, bicameral or random")
 
         
 
@@ -275,25 +278,25 @@ class ContinualLearner:
             gating_values = []
             done = [False for _ in range(self.num_processes)]
 
-            ## TODO: determine how frequently to get prior - do at start of each episode for now
-            with torch.no_grad():
+            if self.args.algorithm != 'random':
+                with torch.no_grad():
 
-                latent, hidden_state = self.agent.get_prior(self.num_processes)
-                # assert len(self.storage.latent) == 0  # make sure we emptied buffers
+                    latent, hidden_state = self.agent.get_prior(self.num_processes)
+                    # assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
-                if self.args.algorithm == 'bicameral':
-                    assert (len(self.storage.left_latent) == 0) & (len(self.storage.right_latent) == 0)
+                    if self.args.algorithm == 'bicameral':
+                        assert (len(self.storage.left_latent) == 0) & (len(self.storage.right_latent) == 0)
 
-                    self.storage.gate_hidden_states[:1].copy_(hidden_state[0])
-                    self.storage.left_hidden_states[:1].copy_(hidden_state[1])
-                    self.storage.right_hidden_states[:1].copy_(hidden_state[2])
-                    self.storage.gate_latent.append(latent[0])
-                    self.storage.left_latent.append(latent[1])
-                    self.storage.right_latent.append(latent[2])
-                else:
-                    assert len(self.storage.latent) == 0  # make sure we emptied buffers
-                    self.storage.hidden_states[:1].copy_(hidden_state)
-                    self.storage.latent.append(latent)
+                        self.storage.gate_hidden_states[:1].copy_(hidden_state[0])
+                        self.storage.left_hidden_states[:1].copy_(hidden_state[1])
+                        self.storage.right_hidden_states[:1].copy_(hidden_state[2])
+                        self.storage.gate_latent.append(latent[0])
+                        self.storage.left_latent.append(latent[1])
+                        self.storage.right_latent.append(latent[2])
+                    else:
+                        assert len(self.storage.latent) == 0  # make sure we emptied buffers
+                        self.storage.hidden_states[:1].copy_(hidden_state)
+                        self.storage.latent.append(latent)
 
             while not all(done):
                 with torch.no_grad():
@@ -303,6 +306,9 @@ class ContinualLearner:
                             self.agent.act(obs.unsqueeze(0), latent, None, None)
                         ## collect gating values
                         gating_values.append(gate_values[0].detach())
+                    elif self.args.algorithm == 'random':
+                        action = torch.tensor([self.envs.action_space.sample() for _ in range(self.num_processes)])
+                        gating_values.append(torch.tensor(0.))
                     else:
                         value, action = self.agent.act(obs, latent, None, None)
                         ## dummy gating value
@@ -325,93 +331,92 @@ class ContinualLearner:
                 episode_reward.append(rew_raw)
                 # if we succeed at all then the task is successful
                 successes.append(torch.tensor([i['success'] for i in info]))
-
-                with torch.no_grad():
-                    if self.args.algorithm == 'bicameral':
-                        latent, hidden_state = self.agent.get_latent(
-                            action, next_obs, rew_raw, 
-                            value_errors, gate_values, hidden_state, 
-                            return_prior = False
-                        )
-
-                    else:
-                        latent, hidden_state = self.agent.get_latent(
-                            action, next_obs, rew_raw, hidden_state, return_prior = False
-                        )
-                
-                self.storage.next_state[step] = next_obs.clone()
-
-                if self.args.algorithm != 'bicameral':
-                    self.storage.insert(
-                        state=next_obs.squeeze(),
-                        belief=None, # could I get rid of belief?
-                        task=None, # could I get rid of task?
-                        actions=action.double(),
-                        rewards_raw=rew_raw.squeeze(0),
-                        rewards_normalised=rew_normalised.squeeze(0),
-                        value_preds= value.squeeze(0),
-                        masks=masks_done.squeeze(0), 
-                        done=torch.from_numpy(done)[:,None].float(),
-                        hidden_states = hidden_state.squeeze(),
-                        latent = latent,
-                    )
+                if self.args.algorithm != 'random':
+                    with torch.no_grad():
+                        if self.args.algorithm == 'bicameral':
+                            latent, hidden_state = self.agent.get_latent(
+                                action, next_obs, rew_raw, 
+                                value_errors, gate_values, hidden_state, 
+                                return_prior = False
+                            )
+                        else:
+                            latent, hidden_state = self.agent.get_latent(
+                                action, next_obs, rew_raw, hidden_state, return_prior = False
+                            )
                     
-                else:
-                    # hidden state is tuple
-                    self.storage.insert(
-                        state=next_obs.squeeze(),
-                        belief=None, # could I get rid of belief?
-                        task=None, # could I get rid of task?
-                        actions=action.double(),
-                        rewards_raw=rew_raw.squeeze(0),
-                        rewards_normalised=rew_normalised.squeeze(0),
-                        value_preds=(value.squeeze(0), left_value.squeeze(0), right_value.squeeze(0)),
-                        masks=masks_done.squeeze(0), 
-                        done=torch.from_numpy(done)[:,None].float(),
-                        hidden_states = hidden_state,
-                        latent = latent,
-                    )
+                    self.storage.next_state[step] = next_obs.clone()
+
+                    if self.args.algorithm != 'bicameral':
+                        self.storage.insert(
+                            state=next_obs.squeeze(),
+                            belief=None, # could I get rid of belief?
+                            task=None, # could I get rid of task?
+                            actions=action.double(),
+                            rewards_raw=rew_raw.squeeze(0),
+                            rewards_normalised=rew_normalised.squeeze(0),
+                            value_preds= value.squeeze(0),
+                            masks=masks_done.squeeze(0), 
+                            done=torch.from_numpy(done)[:,None].float(),
+                            hidden_states = hidden_state.squeeze(),
+                            latent = latent,
+                        )
+                        
+                    else:
+                        # hidden state is tuple
+                        self.storage.insert(
+                            state=next_obs.squeeze(),
+                            belief=None, # could I get rid of belief?
+                            task=None, # could I get rid of task?
+                            actions=action.double(),
+                            rewards_raw=rew_raw.squeeze(0),
+                            rewards_normalised=rew_normalised.squeeze(0),
+                            value_preds=(value.squeeze(0), left_value.squeeze(0), right_value.squeeze(0)),
+                            masks=masks_done.squeeze(0), 
+                            done=torch.from_numpy(done)[:,None].float(),
+                            hidden_states = hidden_state,
+                            latent = latent,
+                        )
    
                 obs = next_obs
 
                 step += 1
-            
-            with torch.no_grad():
-                if self.args.algorithm=='bicameral':
-                    latent, hidden_state = self.agent.get_latent(
-                            action, next_obs, rew_raw, 
-                            value_errors, gate_values, hidden_state, 
-                            return_prior = False
+            if self.args.algorithm != 'random':
+                with torch.no_grad():
+                    if self.args.algorithm=='bicameral':
+                        latent, hidden_state = self.agent.get_latent(
+                                action, next_obs, rew_raw, 
+                                value_errors, gate_values, hidden_state, 
+                                return_prior = False
+                            )
+                        
+                        ## only need final value for returns
+                        value, _, _ = self.agent.get_value(
+                            obs.unsqueeze(0),
+                            latent,
+                            None,
+                            None
                         )
-                    
-                    ## only need final value for returns
-                    value, _, _ = self.agent.get_value(
-                        obs.unsqueeze(0),
-                        latent,
-                        None,
-                        None
-                    )
 
-                else:
-                    latent, hidden_state = self.agent.get_latent(
-                        action, obs, rew_raw, hidden_state, return_prior = False
-                    )
+                    else:
+                        latent, hidden_state = self.agent.get_latent(
+                            action, obs, rew_raw, hidden_state, return_prior = False
+                        )
 
-                    value = self.agent.get_value(
-                        obs.unsqueeze(0),
-                        latent,
-                        None,
-                        None
-                    )
+                        value = self.agent.get_value(
+                            obs.unsqueeze(0),
+                            latent,
+                            None,
+                            None
+                        )
 
-            # compute returns - use_proper_time_limits is false
-            self.storage.compute_returns(
-                next_value = value.detach(), # detach from computation graph
-                use_gae = True,
-                gamma = self.gamma,
-                tau = self.tau,
-                use_proper_time_limits=False
-            )
+                # compute returns - use_proper_time_limits is false
+                self.storage.compute_returns(
+                    next_value = value.detach(), # detach from computation graph
+                    use_gae = True,
+                    gamma = self.gamma,
+                    tau = self.tau,
+                    use_proper_time_limits=False
+                )
 
             ## Update
             if self.args.algorithm == 'bicameral':
@@ -421,7 +426,7 @@ class ContinualLearner:
                 value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch = \
                     self.agent.update(self.storage)
                 gating_penalty_epoch = np.nan
-            elif self.args.algorithm == 'right_only':
+            else:
                 value_loss_epoch, action_loss_epoch, dist_entropy_epoch, gating_penalty_epoch, loss_epoch = \
                     np.nan, np.nan, np.nan, np.nan, np.nan
 
@@ -454,8 +459,10 @@ class ContinualLearner:
                 self.env_id_to_name[current_task + 1],
                 frames,
                 train=True)
-            # clears out old data
-            self.storage.after_update()
+            
+            if self.storage is not None:
+                # clears out old data
+                self.storage.after_update()
 
             # gating network stepper
             if (self.args.use_gating_schedule) and ((eps+1) % self.args.step_gate_every == 0):
@@ -465,8 +472,9 @@ class ContinualLearner:
                 # print(f"Evaluating at Update: {eps}, with {frames} frames")
                 # self.evaluate(current_task, frames)
 
-                ## save the network
-                self.logger.save_network(self.agent.actor_critic)
+                if self.args.algorithm != 'random':
+                    ## save the network
+                    self.logger.save_network(self.agent.actor_critic)
 
             eps+=1
         end_time = time.time()
