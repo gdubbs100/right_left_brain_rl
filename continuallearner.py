@@ -73,11 +73,11 @@ class ContinualLearner:
         )
 
         # only eval on unique envs
-        self.raw_test_envs = prepare_base_envs(
-            self.task_names, 
-            benchmark=ML3(),
-            task_set = 'test', # we train on the test set of ML3 for bicameral
-        )
+        # self.raw_test_envs = prepare_base_envs(
+        #     self.task_names, 
+        #     benchmark=ML3(),
+        #     task_set = 'test', # we train on the test set of ML3 for bicameral
+        # )
 
         # set params for runs
         self.num_processes = num_processes
@@ -175,8 +175,8 @@ class ContinualLearner:
         if self.args.algorithm != 'left_only':
             policy_loc = args.run_folder + '/models/policy.pt'
             encoder_loc = args.run_folder + '/models/encoder.pt'
-            right_policy_net = torch.load(policy_loc).to(device)
-            right_encoder_net = torch.load(encoder_loc).to(device)
+            right_policy_net = torch.load(policy_loc, map_location=device).to(device)
+            right_encoder_net = torch.load(encoder_loc, map_location=device).to(device)
             ## freeze these!
             freeze_parameters(right_policy_net)
             freeze_parameters(right_encoder_net)
@@ -307,7 +307,15 @@ class ContinualLearner:
                         ## collect gating values
                         gating_values.append(gate_values[0].detach())
                     elif self.args.algorithm == 'random':
-                        action = torch.tensor([self.envs.action_space.sample() for _ in range(self.num_processes)])
+                        action = torch.tensor(
+                            np.array(
+                                [self.envs.action_space.sample() for _ in range(self.num_processes)]
+                            )
+                        )
+                        gating_values.append(torch.tensor(0.))
+                    elif self.args.algorithm == 'right_only':
+                        value, action = self.agent.act(obs, latent, None, None, deterministic=True)
+                        ## dummy gating value
                         gating_values.append(torch.tensor(0.))
                     else:
                         value, action = self.agent.act(obs, latent, None, None)
