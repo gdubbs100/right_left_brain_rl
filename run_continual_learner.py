@@ -65,7 +65,7 @@ def main():
     parser.add_argument('--eps', type=float, default =1.0e-8, help='eps param for adam optimiser')
 
     ## admin stuff
-    parser.add_argument('--seed', type=int, default=42, help="set the seed for maximum reproducibility")
+    parser.add_argument('--seed', type=int, default=73, help="set the seed for maximum reproducibility")
     parser.add_argument('--eval_every', type=int, default=10, help="logging frequency where integer value is number of updates")
 
     args, rest_args = parser.parse_known_args()
