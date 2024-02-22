@@ -38,7 +38,7 @@ for env in envs:
     print(f"RUNNING: {env}")
     additional_args = [
         '--env_name', env, 
-        '--run_name', f'baseline_{args.algorithm}_agent_{args.randomization}_env_{env}',
+        '--run_name', f'baseline_{args.randomization}_{env}',
         ]
     command = ["python", SCRIPT] + additional_args + base_args
     subprocess.run(command)
