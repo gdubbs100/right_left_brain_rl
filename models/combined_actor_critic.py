@@ -102,9 +102,11 @@ class BiHemActorCritic(nn.Module):
             sample = sample,
             detach_every=detach_every
         )
+        ## remove observable goals from right
+        state[...,-4] = 0
         _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(
             action, 
-            state, 
+            right_state, 
             reward, 
             right_hidden_state, 
             return_prior = return_prior,
@@ -151,7 +153,8 @@ class BiHemActorCritic(nn.Module):
         )
         left_action_mean = self.left_actor_critic.policy.dist.fc_mean(left_actor_features)
         
-        # get right hemisphere input to distribution        
+        # get right hemisphere input to distribution
+        # NOTE: right hemisphere does not take state - will be converted to zeros        
         right_value, right_actor_features = self.right_actor_critic.policy(
             state=state, latent=right_latent, belief=belief, task=task
         )
@@ -190,22 +193,4 @@ class BiHemActorCritic(nn.Module):
         action_log_probs = dist.log_probs(action)
         dist_entropy = dist.entropy().mean()
         return values, action_log_probs, dist_entropy, gating_values
-
-    # def evaluate_actions_by_hemisphere(self, state, latent, belief, task, action):
-    #     """Call policy eval, set task, belief to None"""
-    #     if isinstance(latent, tuple):
-    #         left_latent = latent[0]
-    #         right_latent = latent[1]
-    #     else:
-    #         raise ValueError
-
-    #     ## get left v, log_probs, entropy
-    #     left_value, left_logprobs, left_entropy = self.left_actor_critic\
-    #         .evaluate_actions(state, left_latent, None, None, action)
-    #     ## get right value, log_probs, entropy
-    #     right_value, right_logprobs, right_entropy = self.right_actor_critic\
-    #         .evaluate_actions(state, right_latent, None, None, action)
-
-    #     return (left_value, left_logprobs, left_entropy), (right_value, right_logprobs, right_entropy)
-
 
