@@ -14,12 +14,12 @@ parser.add_argument('--num_processes', type=str, default='8')
 
 args, _ = parser.parse_known_args()
 envs = [
-    'pick-place-v2',
-    'reach-v2',
-    'push-v2',
-    'reach-wall-v2',
-    'push-wall-v2',
-    'pick-place-wall-v2',
+    # 'pick-place-v2',
+    # 'reach-v2',
+    # 'push-v2',
+    # 'reach-wall-v2',
+    # 'push-wall-v2',
+    # 'pick-place-wall-v2',
     'door-open-v2', 
     'button-press-v2', 
     'faucet-open-v2'
