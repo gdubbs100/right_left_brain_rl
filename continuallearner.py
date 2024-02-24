@@ -314,6 +314,8 @@ class ContinualLearner:
                         )
                         gating_values.append(torch.tensor(0.))
                     elif self.args.algorithm == 'right_only':
+                        ## remove goal observation for right agent
+                        # obs[...,-4:] = 0
                         value, action = self.agent.act(obs, latent, None, None, deterministic=True)
                         ## dummy gating value
                         gating_values.append(torch.tensor(0.))

@@ -103,7 +103,7 @@ class BiHemActorCritic(nn.Module):
             detach_every=detach_every
         )
         ## remove observable goals from right
-        state[...,-4] = 0
+        # state[...,-4] = 0
         _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(
             action, 
             right_state, 
