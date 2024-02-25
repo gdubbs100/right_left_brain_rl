@@ -5,6 +5,8 @@ import gym
 import numpy as np
 import torch
 
+from copy import deepcopy
+
 from models.combined_actor_critic import ActorCritic, BiHemActorCritic
 from models.policy import Policy
 from models.encoder import RNNEncoder
@@ -127,11 +129,6 @@ class ContinualLearner:
             right_args = self.right_init_args)
         self.eval_every = eval_every
 
-        # # calculate number of updates and keep count of frames/iterations
-        # self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
-        # self.frames = 0
-        # self.iter_idx = -1
-
     def init_agent(self, args):
         ## update if relevant
         left_init_args = None
@@ -235,7 +232,7 @@ class ContinualLearner:
                 num_mini_batch=self.args.num_mini_batch,
                 use_huber_loss = self.args.use_huberloss,
                 use_clipped_value_loss=self.args.use_clipped_value_loss,
-                context_window=args.context_window
+                context_window=self.args.context_window
             )
         elif self.args.algorithm == 'right_only':
             ac = ActorCritic(right_policy_net, right_encoder_net)
@@ -251,7 +248,7 @@ class ContinualLearner:
                 num_mini_batch=self.args.num_mini_batch,
                 use_huber_loss = self.args.use_huberloss,
                 use_clipped_value_loss=self.args.use_clipped_value_loss,
-                context_window=args.context_window
+                context_window=self.args.context_window
             )
         elif self.args.algorithm == 'random':
             agent, left_init_args, right_init_args = None, None, None
@@ -474,82 +471,92 @@ class ContinualLearner:
                 # clears out old data
                 self.storage.after_update()
 
-            # gating network stepper
-            if (self.args.use_gating_schedule) and ((eps+1) % self.args.step_gate_every == 0):
-                 self.agent.actor_critic.gating_network.step()
-
             if (eps+1) % self.eval_every == 0:
                 # print(f"Evaluating at Update: {eps}, with {frames} frames")
                 # self.evaluate(current_task, frames)
+                if self.args.algorithm == 'bicameral':
+                    print(f"Running eval on left and right at {eps + 1}")
+                    ## run eval on left network
+                    self.evaluate(current_task, frames, 'left')
+                    ## run eval on right network
+                    self.evaluate(current_task, frames, 'right')
 
                 if self.args.algorithm != 'random':
                     ## save the network
                     self.logger.save_network(self.agent.actor_critic)
+
+            # gating network stepper
+            if (self.args.use_gating_schedule) and ((eps+1) % self.args.step_gate_every == 0):
+                 self.agent.actor_critic.gating_network.step()
 
             eps+=1
         end_time = time.time()
         print(f"completed in {end_time - start_time}")
         self.envs.close()
 
-    def evaluate(self, current_task, frames, test_processes = 10):
-        start_time = time.time() # use this in logger?
-        current_task_name = self.env_id_to_name[current_task + 1]
-        print(f"starting evaluation at {start_time} with training task {current_task_name}")
-        ## num runs given by test_processes
+    def evaluate(self, current_task, frames, left):
+        
+        ## create agent - take left or right
+        if left:
+            eval_run = 'left'
+            ac = deepcopy(self.agent.left_actor_critic)
+        else:
+            eval_run = 'right'
+            ac = deepcopy(self.agent.right_actor_critic)
+
+        
+        eval_agent = CustomPPO(
+                actor_critic=ac,
+                value_loss_coef = self.args.value_loss_coef,
+                entropy_coef = self.args.entropy_coef,
+                policy_optimiser=self.args.optimiser,
+                lr = self.args.learning_rate,
+                eps= self.args.eps, # for adam optimiser
+                clip_param = self.args.ppo_clip_param, 
+                ppo_epoch = self.args.ppo_epoch, 
+                num_mini_batch=self.args.num_mini_batch,
+                use_huber_loss = self.args.use_huberloss,
+                use_clipped_value_loss=self.args.use_clipped_value_loss,
+                context_window=self.args.context_window
+            )
+
+        ## create eval environments
         test_envs = prepare_parallel_envs(
-            envs=self.raw_test_envs, 
+            envs=self.raw_train_envs, 
             steps_per_env=self.rollout_len,
-            num_processes=test_processes,
+            num_processes=self.num_processes,
             gamma=self.gamma,
-            seed = self.seed,
+            seed=self.seed,
             normalise_rew=self.normalise_rewards,
             device=device,
             rank_offset=self.num_processes+1 # avoids overwriting training temp files - can be disastrous!
         )
+        ## run eval loop
+        start_time = time.time() 
+        eps = 0
 
-        # record outputs
-        task_rewards = {
-            env.name: [] for env in self.raw_test_envs
-        }
-
-        task_successes = {
-            env.name: [] for env in self.raw_test_envs
-        }
-
-        task_gating_values = {
-            env.name: [] for env in self.raw_test_envs
-        }
-
+        # steps limit is parameter for whole continual env
         while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
-            current_test_env = test_envs.get_env_attr('cur_seq_idx') + 1
+
             obs = test_envs.reset() # we reset all at once as metaworld is time limited
+            current_task = test_envs.get_env_attr("cur_seq_idx")
             episode_reward = []
             successes = []
             gating_values = []
-            done = [False for _ in range(test_processes)]
 
-            ## TODO: determine how frequently to get prior - do at start of each episode for now
+            done = [False for _ in range(self.num_processes)]
+
             with torch.no_grad():
-                latent, hidden_state = self.agent.get_prior(test_processes)
+                latent, hidden_state = eval_agent.get_prior(self.num_processes)
 
             while not all(done):
-                # with torch.no_grad():
-                #     # be deterministic in eval
-                #     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
                 with torch.no_grad():
-                    if self.args.algorithm == 'bicameral':
-                        value, action, (left_gating_value, _) = self.agent.act(obs.unsqueeze(0), latent, None, None, deterministic=True)
-                        ## collect gating values
-                        gating_values.append(left_gating_value.detach())
-                    else:
-                        value, action = self.agent.act(obs, latent, None, None, deterministic=True)
-                        ## dummy gating value
-                        gating_values.append(torch.tensor(0.))
-                
-                # no need for normalised_reward during eval
-                next_obs, (rew_raw, _), done, info = test_envs.step(action)
-                assert all(done) == any(done), "Metaworld envs should all end simultaneously"
+                    _, action = eval_agent.act(obs, latent, None, None, deterministic=True)
+                    ## dummy gating value
+                    gating_values.append(torch.tensor(0.))
 
+                next_obs, (rew_raw, _), done, info = self.envs.step(action)
+                assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
                 ## combine all rewards
                 episode_reward.append(rew_raw)
@@ -557,77 +564,136 @@ class ContinualLearner:
                 successes.append(torch.tensor([i['success'] for i in info]))
 
                 with torch.no_grad():
-                    latent, hidden_state = self.agent.get_latent(
-                    action, next_obs, rew_raw, hidden_state, return_prior = False
-                    )
-
+                        latent, hidden_state = self.agent.get_latent(
+                            action, next_obs, rew_raw, hidden_state, return_prior = False
+                        )
+   
                 obs = next_obs
 
-            ## log the results here
-            task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
-            task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].mean()
-            task_gating_values[self.env_id_to_name[current_test_env]] = torch.stack(gating_values).cpu()
-  
-        #log rewards, successes to tensorboard
-        for task_name in self.env_id_to_name.values():
+            # log eval results
+            task_rewards = torch.stack(episode_reward).cpu()
+            task_successes = torch.stack(successes).max(0)[0].mean()            
+            task_gating_values = torch.stack(gating_values).cpu()
+            self.logger.add_tensorboard(f'{eval_run}/episode_rewards',task_rewards.mean(), frames)
+            self.logger.add_tensorboard(f'{eval_run}/episode_success',task_successes, frames)
+            self.logger.add_tensorboard(f'{eval_run}/left_gating_values', task_gating_values.mean(), frames)
+
+            ## save to csv
             self.log_results(
-                task_name, 
-                task_rewards[task_name],
-                task_successes[task_name],
-                task_gating_values[task_name],
-                test_processes,
-                current_task_name,
+                self.env_id_to_name[current_task + 1], 
+                task_rewards,
+                task_successes,
+                task_gating_values, 
+                self.num_processes,
+                self.env_id_to_name[current_task + 1],
                 frames,
-                train=False) # log to test csv
+                train=True)
 
+            eps+=1
         end_time = time.time()
-        print(f"eval completed in {end_time - start_time}")
-        test_envs.close()
-        # for task_name in self.env_id_to_name.values():
-        #     self.logger.add_tensorboard(f'test_results/{task_name}_rewards', torch.mean(task_rewards[task_name]), eps)
-        #     self.logger.add_tensorboard(f'test_results/{task_name}_successes', task_successes[task_name], eps)
-        #     self.logger.add_tensorboard(f'test_results/{task_name}_left_gating_values', torch.mean(task_gating_values[task_name]), eps)
+        print(f"completed in {end_time - start_time}")
+        self.envs.close()
 
-        #     ## log out csv also
-        #     reward_quantiles = torch.quantile(
-        #         task_rewards[task_name],
-        #         torch.tensor(self.quantiles)
-        #     ).numpy().tolist()
 
-        #     gating_value_quantiles = torch.quantile(
-        #         task_gating_values[task_name],
-        #         torch.tensor(self.quantiles)
-        #     ).numpy().tolist()
+        ## log - with left or right prefix
+        ## also create left / right results csvs
 
-        #     to_write = (
-        #         current_task_name,
-        #         task_name,
-        #         task_successes[task_name].numpy(),
-        #         test_processes, # record number of eval tasks per env
-        #         task_rewards[task_name].mean().numpy(),
-        #         *reward_quantiles,
-        #         *gating_value_quantiles,
-        #         eps
-        #     )
-        #     self.logger.add_csv(to_write)
+    # def evaluate(self, current_task, frames, test_processes = 10):
+    #     start_time = time.time() # use this in logger?
+    #     current_task_name = self.env_id_to_name[current_task + 1]
+    #     print(f"starting evaluation at {start_time} with training task {current_task_name}")
+    #     ## num runs given by test_processes
+    #     test_envs = prepare_parallel_envs(
+    #         envs=self.raw_test_envs, 
+    #         steps_per_env=self.rollout_len,
+    #         num_processes=test_processes,
+    #         gamma=self.gamma,
+    #         seed = self.seed,
+    #         normalise_rew=self.normalise_rewards,
+    #         device=device,
+    #         rank_offset=self.num_processes+1 # avoids overwriting training temp files - can be disastrous!
+    #     )
 
-    def log_results(self, task_name, rewards, successes, gating_values, processes, current_task, frame, train):
+    #     # record outputs
+    #     task_rewards = {
+    #         env.name: [] for env in self.raw_test_envs
+    #     }
 
-        # for task_name in task_names:
-        self.logger.add_tensorboard(
-            f'test_results/{task_name}_rewards', 
-            torch.mean(rewards), 
-            frame)
-        self.logger.add_tensorboard(
-            f'test_results/{task_name}_successes', 
-            successes, 
-            frame)
-        self.logger.add_tensorboard(
-            f'test_results/{task_name}_left_gating_values', 
-            torch.mean(gating_values), 
-            frame)
+    #     task_successes = {
+    #         env.name: [] for env in self.raw_test_envs
+    #     }
 
-        ## log out csv also
+    #     task_gating_values = {
+    #         env.name: [] for env in self.raw_test_envs
+    #     }
+
+    #     while test_envs.get_env_attr('cur_step') < test_envs.get_env_attr('steps_limit'):
+    #         current_test_env = test_envs.get_env_attr('cur_seq_idx') + 1
+    #         obs = test_envs.reset() # we reset all at once as metaworld is time limited
+    #         episode_reward = []
+    #         successes = []
+    #         gating_values = []
+    #         done = [False for _ in range(test_processes)]
+
+    #         ## TODO: determine how frequently to get prior - do at start of each episode for now
+    #         with torch.no_grad():
+    #             latent, hidden_state = self.agent.get_prior(test_processes)
+
+    #         while not all(done):
+    #             # with torch.no_grad():
+    #             #     # be deterministic in eval
+    #             #     _, action = self.agent.act(obs, latent, None, None, deterministic = True)
+    #             with torch.no_grad():
+    #                 if self.args.algorithm == 'bicameral':
+    #                     value, action, (left_gating_value, _) = self.agent.act(obs.unsqueeze(0), latent, None, None, deterministic=True)
+    #                     ## collect gating values
+    #                     gating_values.append(left_gating_value.detach())
+    #                 else:
+    #                     value, action = self.agent.act(obs, latent, None, None, deterministic=True)
+    #                     ## dummy gating value
+    #                     gating_values.append(torch.tensor(0.))
+                
+    #             # no need for normalised_reward during eval
+    #             next_obs, (rew_raw, _), done, info = test_envs.step(action)
+    #             assert all(done) == any(done), "Metaworld envs should all end simultaneously"
+
+
+    #             ## combine all rewards
+    #             episode_reward.append(rew_raw)
+    #             # if we succeed at all then the task is successful
+    #             successes.append(torch.tensor([i['success'] for i in info]))
+
+    #             with torch.no_grad():
+    #                 latent, hidden_state = self.agent.get_latent(
+    #                 action, next_obs, rew_raw, hidden_state, return_prior = False
+    #                 )
+
+    #             obs = next_obs
+
+    #         ## log the results here
+    #         task_rewards[self.env_id_to_name[current_test_env]] = torch.stack(episode_reward).cpu()
+    #         task_successes[self.env_id_to_name[current_test_env]] = torch.stack(successes).max(0)[0].mean()
+    #         task_gating_values[self.env_id_to_name[current_test_env]] = torch.stack(gating_values).cpu()
+  
+    #     #log rewards, successes to tensorboard
+    #     for task_name in self.env_id_to_name.values():
+    #         self.log_results(
+    #             task_name, 
+    #             task_rewards[task_name],
+    #             task_successes[task_name],
+    #             task_gating_values[task_name],
+    #             test_processes,
+    #             current_task_name,
+    #             frames,
+    #             train=False) # log to test csv
+
+    #     end_time = time.time()
+    #     print(f"eval completed in {end_time - start_time}")
+    #     test_envs.close()
+
+    def log_results(self, task_name, rewards, successes, gating_values, processes, current_task, frame, csv_to_do):
+
+        ## log csv also
         reward_quantiles = torch.quantile(
             rewards,
             torch.tensor(self.quantiles)
@@ -648,26 +714,5 @@ class ContinualLearner:
             *gating_value_quantiles,
             frame
         )
-        self.logger.add_csv(to_write, train)
+        self.logger.add_csv(to_write, csv_to_do)
 
-        # self.logger.add_multiple_tensorboard('mean_task_rewards', {name: torch.mean(rewards) for name, rewards in task_rewards.items()}, eps)
-        # self.logger.add_multiple_tensorboard('task_successes', task_successes, eps)
-
-        # log reward quantiles, successes to csv
-        # ['training_task', 'evaluation_task', 'successes', 'result_mean', *['q_' + str(q) for q in self.logging_quantiles], 'episode']
-        # for task in task_rewards.keys():
-        #     reward_quantiles = torch.quantile(
-        #         task_rewards[task],
-        #         torch.tensor(self.quantiles)
-        #     ).numpy().tolist()
-
-        #     to_write = (
-        #         current_task_name,
-        #         task,
-        #         task_successes[task].numpy(),
-        #         test_processes, # record number of eval tasks per env
-        #         task_rewards[task].mean().numpy(),
-        #         *reward_quantiles,
-        #         eps
-        #     )
-        #     self.logger.add_csv(to_write)
