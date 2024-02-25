@@ -106,7 +106,7 @@ class BiHemActorCritic(nn.Module):
         # state[...,-4] = 0
         _, right_latent_mean, right_latent_logvar, right_hidden_state = self.right_actor_critic.encoder(
             action, 
-            right_state, 
+            state, 
             reward, 
             right_hidden_state, 
             return_prior = return_prior,

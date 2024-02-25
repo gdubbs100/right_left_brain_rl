@@ -472,8 +472,7 @@ class ContinualLearner:
                 self.storage.after_update()
 
             if (eps+1) % self.eval_every == 0:
-                # print(f"Evaluating at Update: {eps}, with {frames} frames")
-                # self.evaluate(current_task, frames)
+
                 if self.args.algorithm == 'bicameral':
                     print(f"Running eval on left and right at {eps + 1}")
                     ## run eval on left network
@@ -592,7 +591,8 @@ class ContinualLearner:
             eps+=1
         end_time = time.time()
         print(f"completed in {end_time - start_time}")
-        self.envs.close()
+        test_envs.close()
+        del eval_agent
 
 
         ## log - with left or right prefix
