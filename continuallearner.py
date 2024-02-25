@@ -311,8 +311,6 @@ class ContinualLearner:
                         )
                         gating_values.append(torch.tensor(0.))
                     elif self.args.algorithm == 'right_only':
-                        ## remove goal observation for right agent
-                        # obs[...,-4:] = 0
                         value, action = self.agent.act(obs, latent, None, None, deterministic=True)
                         ## dummy gating value
                         gating_values.append(torch.tensor(0.))
@@ -465,7 +463,7 @@ class ContinualLearner:
                 self.num_processes,
                 self.env_id_to_name[current_task + 1],
                 frames,
-                train=True)
+                'train')
             
             if self.storage is not None:
                 # clears out old data
@@ -474,11 +472,11 @@ class ContinualLearner:
             if (eps+1) % self.eval_every == 0:
 
                 if self.args.algorithm == 'bicameral':
-                    print(f"Running eval on left and right at {eps + 1}")
+                    print(f"Running eval on left only at {eps + 1}")
                     ## run eval on left network
                     self.evaluate(current_task, frames, 'left')
                     ## run eval on right network
-                    self.evaluate(current_task, frames, 'right')
+                    # self.evaluate(current_task, frames, 'right')
 
                 if self.args.algorithm != 'random':
                     ## save the network
@@ -498,10 +496,11 @@ class ContinualLearner:
         ## create agent - take left or right
         if left:
             eval_run = 'left'
-            ac = deepcopy(self.agent.left_actor_critic)
+            ac = deepcopy(self.agent.actor_critic.left_actor_critic)
         else:
+            raise NotImplementedError
             eval_run = 'right'
-            ac = deepcopy(self.agent.right_actor_critic)
+            ac = deepcopy(self.agent.actor_critic.right_actor_critic)
 
         
         eval_agent = CustomPPO(
@@ -520,8 +519,13 @@ class ContinualLearner:
             )
 
         ## create eval environments
+        raw_test_envs = prepare_base_envs(
+            self.task_names, 
+            benchmark=ML3(),
+            task_set = 'test',
+        )
         test_envs = prepare_parallel_envs(
-            envs=self.raw_train_envs, 
+            envs=raw_test_envs, 
             steps_per_env=self.rollout_len,
             num_processes=self.num_processes,
             gamma=self.gamma,
@@ -554,7 +558,7 @@ class ContinualLearner:
                     ## dummy gating value
                     gating_values.append(torch.tensor(0.))
 
-                next_obs, (rew_raw, _), done, info = self.envs.step(action)
+                next_obs, (rew_raw, _), done, info = test_envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
 
                 ## combine all rewards
@@ -563,7 +567,7 @@ class ContinualLearner:
                 successes.append(torch.tensor([i['success'] for i in info]))
 
                 with torch.no_grad():
-                        latent, hidden_state = self.agent.get_latent(
+                        latent, hidden_state = eval_agent.get_latent(
                             action, next_obs, rew_raw, hidden_state, return_prior = False
                         )
    
@@ -571,7 +575,7 @@ class ContinualLearner:
 
             # log eval results
             task_rewards = torch.stack(episode_reward).cpu()
-            task_successes = torch.stack(successes).max(0)[0].mean()            
+            task_successes = torch.stack(successes).max(0)[0].mean()
             task_gating_values = torch.stack(gating_values).cpu()
             self.logger.add_tensorboard(f'{eval_run}/episode_rewards',task_rewards.mean(), frames)
             self.logger.add_tensorboard(f'{eval_run}/episode_success',task_successes, frames)
@@ -586,13 +590,15 @@ class ContinualLearner:
                 self.num_processes,
                 self.env_id_to_name[current_task + 1],
                 frames,
-                train=True)
+                eval_run)
 
             eps+=1
         end_time = time.time()
         print(f"completed in {end_time - start_time}")
         test_envs.close()
         del eval_agent
+        del test_envs
+        del raw_test_envs
 
 
         ## log - with left or right prefix
