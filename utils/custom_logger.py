@@ -21,8 +21,6 @@ class CustomLogger:
             self.args.run_name + '_' + self.args.algorithm + datetime.datetime.now().strftime('_%d%m_%H%M%S')
         )
 
-        self.train_csv_dir = self.log_dir + '/train_results.csv'
-        self.test_csv_dir = self.log_dir + '/test_results.csv'
         self.writer = SummaryWriter(log_dir=self.log_dir)
 
         self.network_dir = self.log_dir + '/actor_critic.pt'
@@ -44,17 +42,16 @@ class CustomLogger:
             'frame'
         ]
 
-        ## create train / test csvs
-        with open(self.train_csv_dir, 'w') as f:
-            csv_writer = csv.writer(f, delimiter=',')
-            csv_writer.writerow(
-                self.result_log_headers
-            )
-        with open(self.test_csv_dir, 'w') as f:
-            csv_writer = csv.writer(f, delimiter=',')
-            csv_writer.writerow(
-                self.result_log_headers
-            )
+        ## create csvs with headers
+        self.train_csv_dir = self.log_dir + '/train_results.csv'
+        self.init_result_csv(self.train_csv_dir)
+
+        # if logging bicameral agent, 
+        if (self.args is not None) and (self.args.algorithm=='bicameral'):
+            self.left_csv_dir = self.log_dir + '/left_eval_results.csv'
+            self.right_csv_dir = self.log_dir + '/right_eval_results.csv'
+            self.init_result_csv(self.left_csv_dir)
+            self.init_result_csv(self.right_csv_dir)
 
         ### save out args if supplied to continual learner - otherwise ignore
         if self.args is not None:
@@ -79,17 +76,30 @@ class CustomLogger:
     def add_multiple_tensorboard(self, name, value_dict, x_pos):
         self.writer.add_scalars(name, value_dict, x_pos)
 
-    def add_csv(self, row, train = True):
-        if train:
+    def add_csv(self, row, csv_to_do):
+        if csv_to_do == 'train':
             csv_dir = self.train_csv_dir
+        elif csv_to_do == 'left':
+            csv_dir = self.left_csv_dir
+        elif csv_to_do == 'right':
+            csv_dir = self.right_csv_dir
         else:
-            csv_dir = self.test_csv_dir
+            raise ValueError(f"No csv for {csv_to_do}")
+
         assert len(row) == len(self.result_log_headers), 'You have not passed sufficient values to logger'
         with open(csv_dir, 'a') as f:
             csv_writer = csv.writer(f, delimiter=',')
             csv_writer.writerow(
                 row
             )
+
+    def init_result_csv(self, csv_dir):
+        with open(csv_dir, 'w') as f:
+            csv_writer = csv.writer(f, delimiter=',')
+            csv_writer.writerow(
+                self.result_log_headers
+            )
+        
     def save_network(self, network):
         torch.save(network, self.network_dir)
 
