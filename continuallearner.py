@@ -471,6 +471,12 @@ class ContinualLearner:
 
             if (eps+1) % self.eval_every == 0:
 
+                if self.args.algorithm not in ['right_only', 'random']:
+                    print(f"Running eval on full model at {eps + 1}")
+                    ## run eval on full network
+                    self.evaluate(current_task, frames, 'test')
+                    
+
                 if self.args.algorithm == 'bicameral':
                     print(f"Running eval on left only at {eps + 1}")
                     ## run eval on left network
@@ -491,32 +497,32 @@ class ContinualLearner:
         print(f"completed in {end_time - start_time}")
         self.envs.close()
 
-    def evaluate(self, current_task, frames, left):
+    def evaluate(self, current_task, frames, eval_run):
         
-        ## create agent - take left or right
-        if left:
-            eval_run = 'left'
-            ac = deepcopy(self.agent.actor_critic.left_actor_critic)
+        ## create agent
+        if eval_run == 'left':
+            ac = self.agent.actor_critic.left_actor_critic
+            eval_agent = CustomPPO(
+                    actor_critic=ac,
+                    value_loss_coef = self.args.value_loss_coef,
+                    entropy_coef = self.args.entropy_coef,
+                    policy_optimiser=self.args.optimiser,
+                    lr = self.args.learning_rate,
+                    eps= self.args.eps, # for adam optimiser
+                    clip_param = self.args.ppo_clip_param, 
+                    ppo_epoch = self.args.ppo_epoch, 
+                    num_mini_batch=self.args.num_mini_batch,
+                    use_huber_loss = self.args.use_huberloss,
+                    use_clipped_value_loss=self.args.use_clipped_value_loss,
+                    context_window=self.args.context_window
+                )
+        elif eval_run == 'test':
+            eval_agent = deepcopy(self.agent)
         else:
             raise NotImplementedError
             eval_run = 'right'
             ac = deepcopy(self.agent.actor_critic.right_actor_critic)
 
-        
-        eval_agent = CustomPPO(
-                actor_critic=ac,
-                value_loss_coef = self.args.value_loss_coef,
-                entropy_coef = self.args.entropy_coef,
-                policy_optimiser=self.args.optimiser,
-                lr = self.args.learning_rate,
-                eps= self.args.eps, # for adam optimiser
-                clip_param = self.args.ppo_clip_param, 
-                ppo_epoch = self.args.ppo_epoch, 
-                num_mini_batch=self.args.num_mini_batch,
-                use_huber_loss = self.args.use_huberloss,
-                use_clipped_value_loss=self.args.use_clipped_value_loss,
-                context_window=self.args.context_window
-            )
 
         ## create eval environments
         raw_test_envs = prepare_base_envs(
@@ -554,9 +560,16 @@ class ContinualLearner:
 
             while not all(done):
                 with torch.no_grad():
-                    _, action = eval_agent.act(obs, latent, None, None, deterministic=True)
-                    ## dummy gating value
-                    gating_values.append(torch.tensor(0.))
+                    if (self.args.algorithm == 'bicameral') and (eval_run != 'left'):
+                        ## TODO: don't like unsqueeze obs but ok for now
+                        (_, left_value, right_value), action, gate_values = \
+                            self.agent.act(obs.unsqueeze(0), latent, None, None, deterministic=True)
+                        ## collect gating values
+                        gating_values.append(gate_values[0].detach())
+                    else:
+                        _, action = eval_agent.act(obs, latent, None, None, deterministic=True)
+                        ## dummy gating value
+                        gating_values.append(torch.tensor(0.))
 
                 next_obs, (rew_raw, _), done, info = test_envs.step(action)
                 assert all(done) == any(done), "Metaworld envs should all end simultaneously"
@@ -567,6 +580,17 @@ class ContinualLearner:
                 successes.append(torch.tensor([i['success'] for i in info]))
 
                 with torch.no_grad():
+                    if (self.args.algorithm == 'bicameral') and (eval_run != 'left'):
+                        value_errors = (
+                            rew_raw - left_value,
+                            rew_raw - right_value
+                        )
+                        latent, hidden_state = self.agent.get_latent(
+                            action, next_obs, rew_raw, 
+                            value_errors, gate_values, hidden_state, 
+                            return_prior = False
+                        )
+                    else:
                         latent, hidden_state = eval_agent.get_latent(
                             action, next_obs, rew_raw, hidden_state, return_prior = False
                         )
