@@ -45,13 +45,14 @@ class CustomLogger:
         ## create csvs with headers
         self.train_csv_dir = self.log_dir + '/train_results.csv'
         self.init_result_csv(self.train_csv_dir)
+        self.test_csv_dir = self.log_dir + '/test_results.csv'
+        self.init_result_csv(self.test_csv_dir)
 
         # if logging bicameral agent, 
         if (self.args is not None) and (self.args.algorithm=='bicameral'):
             self.left_csv_dir = self.log_dir + '/left_eval_results.csv'
-            self.right_csv_dir = self.log_dir + '/right_eval_results.csv'
             self.init_result_csv(self.left_csv_dir)
-            self.init_result_csv(self.right_csv_dir)
+
 
         ### save out args if supplied to continual learner - otherwise ignore
         if self.args is not None:
@@ -81,8 +82,8 @@ class CustomLogger:
             csv_dir = self.train_csv_dir
         elif csv_to_do == 'left':
             csv_dir = self.left_csv_dir
-        elif csv_to_do == 'right':
-            csv_dir = self.right_csv_dir
+        elif csv_to_do == 'test':
+            csv_dir = self.test_csv_dir
         else:
             raise ValueError(f"No csv for {csv_to_do}")
 
