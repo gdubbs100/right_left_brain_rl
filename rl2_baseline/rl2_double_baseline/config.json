@@ -41,7 +41,7 @@
   "num_processes": 21,
   "policy_num_steps": 5000,
   "policy_eps": 1e-08,
-  "policy_init_std": 1.0,
+  "policy_init_std": 0.5,
   "policy_fix_std": false,
   "policy_value_loss_coef": 1.0,
   "policy_entropy_coef": 5e-06,
