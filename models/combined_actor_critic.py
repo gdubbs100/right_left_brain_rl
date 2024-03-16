@@ -68,7 +68,7 @@ class BiHemActorCritic(nn.Module):
                 init_right_value=init_right_value
             )
         else:
-            ## TODO: hidden_size, take_action, take_state, dim_action, dim_state
+
             self.gating_network = EncoderGatingNetwork(
                 take_action=use_action_in_gate, 
                 take_state=use_state_in_gate,
