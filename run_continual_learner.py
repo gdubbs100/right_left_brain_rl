@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--run_folder', help = 'folder from which to load a network - requires config.json if left_only or bicameral, requires policy and encoder networks if right_only')
     parser.add_argument('--log_folder', default='./logs/continual_learning/')
     parser.add_argument('--env_name', type = str, default = 'push-v2',
-                        help='tasks to train on - choose one of: ["push-v2", "reach-v2", "pick-place-v2", "door-open-v2", "button-press-v2", "faucet-open-v2", "reach-wall-v2", "push-wall-v2", "pick-place-wall-v2"]')
+                        help='tasks to train on - choose one of: ["push-v2", "reach-v2", "pick-place-v2", "door-open-v2", "button-press-v2", "faucet-open-v2", "reach-wall-v2", "push-wall-v2", "shelf-place-v2"]')
 
     ## num processes and env steps
     parser.add_argument('--steps_per_env', type=int, default=1e6, help="Number of steps each environment is trained on. CW uses 1m")
@@ -75,12 +75,10 @@ def main():
     print(
         f"Running with {args.num_processes} processes for {args.steps_per_env / args.num_processes} each for a total of {args.steps_per_env} steps per env."
     )
-    ## check environment specs
-    # assert args.envs in ['CW20', 'CW10'], f"env is not one of CW10, CW20. env is: {args.envs}"
 
     ## effective steps per env is the required amount of steps that each paralell env is run for
     effective_steps_per_env = args.steps_per_env / args.num_processes
-    tasks = [args.env_name]#TASK_SEQS[args.envs]
+    tasks = [args.env_name]
 
     ## run continual learner
     continual_learner = ContinualLearner(
