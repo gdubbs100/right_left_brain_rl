@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--run_folder', help = 'folder from which to load a network - requires config.json if left_only or bicameral, requires policy and encoder networks if right_only')
     parser.add_argument('--log_folder', default='./logs/continual_learning/')
     parser.add_argument('--env_name', type = str, default = 'push-v2',
-                        help='tasks to train on - choose one of: ["push-v2", "reach-v2", "pick-place-v2", "door-open-v2", "button-press-v2", "faucet-open-v2", "reach-wall-v2", "push-wall-v2", "shelf-place-v2"]')
+                        help='tasks to train on - choose one of: ["push-v2", "reach-v2", "pick-place-v2", "door-open-v2", "button-press-v2", "faucet-open-v2", "reach-wall-v2", "push-wall-v2", "bin-picking-v2"]')
 
     ## num processes and env steps
     parser.add_argument('--steps_per_env', type=int, default=1e6, help="Number of steps each environment is trained on. CW uses 1m")
