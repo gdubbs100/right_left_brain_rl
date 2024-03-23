@@ -118,6 +118,8 @@ def evaluate_rl2(
 
     # normalise to 1/0
     success_for_episode /= (success_for_episode + 1.0e-10)
+    # record return per time-step rather than per episode
+    returns_per_episode /= 500
 
     return returns_per_episode[:, :num_episodes], success_for_episode[:, :num_episodes]
 

@@ -24,7 +24,7 @@ def main():
     args, rest_args = parser.parse_known_args()
 
     run_folder = args.run_folder
-    log_folder = args.log_folder + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S')
+    log_folder = args.log_folder + datetime.datetime.now().strftime('%d_%m_%H_%M_%S')
     num_rounds = int(args.num_rounds)
     num_episodes = int(args.num_episodes)
     num_explore = int(args.num_explore) if args.num_explore is not None else args.num_explore
