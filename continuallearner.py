@@ -388,8 +388,9 @@ class ContinualLearner:
             if self.args.algorithm != 'random':
                 with torch.no_grad():
                     if self.args.algorithm=='bicameral':
+                        ## BUG: next obs vs obs - should be the same at this point, but not good
                         latent, hidden_state = self.agent.get_latent(
-                                action, next_obs, rew_raw, 
+                                action, obs, rew_raw, 
                                 value_errors, gate_values, hidden_state, 
                                 return_prior = False
                             )
