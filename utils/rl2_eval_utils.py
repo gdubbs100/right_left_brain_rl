@@ -15,17 +15,18 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def evaluate_rl2(
         env_name,
-        policy,
+        agent,
+        # policy,
         iter_idx,
-        encoder,
+        # encoder,
         num_episodes,
         num_processes,
-        num_explore = None,
+        # num_explore = None,
         deterministic = False
         ):
     
-    if num_explore is None:
-        num_explore = num_episodes + 1
+    # if num_explore is None:
+    #     num_explore = num_episodes + 1
 
     # --- set up the things we want to log ---
 
@@ -61,21 +62,22 @@ def evaluate_rl2(
     task_count = torch.zeros(num_processes).long().to(device)
 
     # reset latent state to prior
-    _, latent_mean, latent_logvar, hidden_state = encoder.prior(num_processes)
+    # _, latent_mean, latent_logvar, hidden_state = encoder.prior(num_processes)
+    latent, hidden_state = agent.get_prior(num_processes)
 
     for episode_idx in range(num_episodes):
 
         ## reset hidden state after exploration episodes
-        if episode_idx > num_explore:
-            print(episode_idx, "resetting hidden to adapted hidden state")
-            fake_dones = torch.zeros(num_processes).to(device)
-            encoder.reset_hidden(adapted_hidden, fake_dones)
+        # if episode_idx > num_explore:
+        #     print(episode_idx, "resetting hidden to adapted hidden state")
+        #     fake_dones = torch.zeros(num_processes).to(device)
+        #     encoder.reset_hidden(adapted_hidden, fake_dones)
 
         for step_idx in range(num_steps):
 
             with torch.no_grad():
-                latent = F.relu(torch.cat((latent_mean, latent_logvar), dim=-1).squeeze())
-                _, action = policy.act(None, latent, None, None, deterministic=deterministic)
+                # latent = F.relu(torch.cat((latent_mean, latent_logvar), dim=-1).squeeze())
+                _, action = agent.act(None, latent, None, None, deterministic=deterministic)
 
             # observe reward and next obs
             state, reward, done, infos = envs.step(action.detach())
@@ -91,17 +93,24 @@ def evaluate_rl2(
             successes = torch.tensor([info['success'] for info in infos]).to(device)
 
 
+            # update the hidden state & latent
             # update the hidden state
-            _, latent_mean, latent_logvar, hidden_state = utl.update_encoding(encoder=encoder,
-                                                                              next_obs=state,
-                                                                              action=action,
-                                                                              reward=reward,
-                                                                              done=None,
-                                                                              hidden_state=hidden_state)
+            latent, hidden_state = agent.get_latent(
+                action=action, 
+                state=state, 
+                reward=reward, 
+                hidden_state=hidden_state, 
+                return_prior=False)
+            # _, latent_mean, latent_logvar, hidden_state = utl.update_encoding(encoder=encoder,
+            #                                                                   next_obs=state,
+            #                                                                   action=action,
+            #                                                                   reward=reward,
+            #                                                                   done=None,
+            #                                                                   hidden_state=hidden_state)
             
             # saves hidden state after initial exploration (-1 because zero index)
-            if episode_idx == (num_explore - 1):
-                adapted_hidden = hidden_state.clone()
+            # if episode_idx == (num_explore - 1):
+            #     adapted_hidden = hidden_state.clone()
 
             # get successes
             success_for_episode[range(num_processes), task_count] += successes.view(-1)
@@ -119,7 +128,7 @@ def evaluate_rl2(
     # normalise to 1/0
     success_for_episode /= (success_for_episode + 1.0e-10)
     # record return per time-step rather than per episode
-    returns_per_episode /= 500
+    returns_per_episode /= 500 # this should be / (num_episodes * 500) <- maybe not
 
     return returns_per_episode[:, :num_episodes], success_for_episode[:, :num_episodes]
 

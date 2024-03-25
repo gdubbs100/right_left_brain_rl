@@ -146,13 +146,14 @@ class CustomPPO:
     
     def get_latent(self, action, state, reward, hidden_state, return_prior = False):
         _, latent_mean, latent_logvar, hidden_state = self.actor_critic.encoder(action, state, reward, hidden_state, return_prior = return_prior)
-        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1)
+        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim = -1).squeeze()
         ## assume always add non-linearity to latent
-        return F.relu(latent[None,:]), hidden_state
+        # return F.relu(latent[None,:]), hidden_state
+        return F.relu(latent), hidden_state
     
     def get_prior(self, num_processes):
         _, latent_mean, latent_logvar, hidden_state = self.actor_critic.encoder.prior(num_processes)
-        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1)
+        latent = torch.cat((latent_mean.clone(), latent_logvar.clone()), dim=-1).squeeze()
         ## assume always add non-linearity to latent
         return F.relu(latent), hidden_state
     

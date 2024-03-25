@@ -9,6 +9,9 @@ from environments.custom_metaworld_benchmark import CustomML10, ML3
 from utils.rl2_eval_utils import *
 from utils.helpers import boolean_argument
 
+from algorithms.custom_ppo import CustomPPO
+from models.combined_actor_critic import ActorCritic
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def main():
@@ -17,7 +20,7 @@ def main():
     parser.add_argument('--log_folder', default='./logs/rl2_eval/')
     parser.add_argument('--num_episodes', default = 10)
     parser.add_argument('--num_rounds', default = 1)
-    parser.add_argument('--num_explore', default = None)
+    # parser.add_argument('--num_explore', default = None)
     parser.add_argument('--deterministic', type=boolean_argument, default=True)
     parser.add_argument('--benchmark', default='ML10')
 
@@ -27,7 +30,7 @@ def main():
     log_folder = args.log_folder + datetime.datetime.now().strftime('%d_%m_%H_%M_%S')
     num_rounds = int(args.num_rounds)
     num_episodes = int(args.num_episodes)
-    num_explore = int(args.num_explore) if args.num_explore is not None else args.num_explore
+    # num_explore = int(args.num_explore) if args.num_explore is not None else args.num_explore
     train_benchmark = args.benchmark + '-v2'
     test_benchmark = args.benchmark + '_test-v2'
     deterministic = args.deterministic
@@ -43,8 +46,25 @@ def main():
         json.dump(config, file, indent=2)
 
     ## Create RL2 agent
-    policy_net = torch.load(run_folder + '/models/policy.pt')
-    encoder_net = torch.load(run_folder + '/models/encoder.pt')
+    policy_net = torch.load(run_folder + '/models/policy.pt', map_location=device)
+    encoder_net = torch.load(run_folder + '/models/encoder.pt', map_location=device)
+    actor_critic = ActorCritic(policy_net, encoder_net)
+    ## all params dummy except for actor_critic
+    agent = CustomPPO(
+                    actor_critic=actor_critic,
+                    value_loss_coef=1,
+                    entropy_coef=1,
+                    policy_optimiser='Adam',
+                    lr=0.1,
+                    clip_param=0.2,
+                    ppo_epoch=5,
+                    num_mini_batch=5,
+                    max_grad_norm = 0.5,
+                    eps=None,
+                    use_huber_loss=True,
+                    use_clipped_value_loss=True,
+                    context_window = None
+                    )
 
     # # get benchmark and tasks
     if args.benchmark == 'CustomML10':
@@ -58,7 +78,7 @@ def main():
     elif args.benchmark == 'ML3':
         benchmark = ML3()
     else:
-        raise ValueError(f"{args.benchmark} is not available, please choose: CustomML10 or ML10 ML1")
+        raise ValueError(f"{args.benchmark} is not available, please choose: CustomML10 or ML10 or ML3")
 
     # get task names
     train_tasks = list(benchmark.train_classes.keys())
@@ -71,12 +91,13 @@ def main():
         print(f'Evaluating on train set for run {i}')
         train_reward, train_success = evaluate_rl2(
             env_name = train_benchmark, 
-            policy = policy_net,
+            agent=agent,
+            # policy = policy_net,
             iter_idx = i,
-            encoder = encoder_net,
+            # encoder = encoder_net,
             num_episodes=num_episodes,
             num_processes=len(train_tasks),
-            num_explore = num_explore,
+            # num_explore = num_explore,
             deterministic = deterministic
         )
 
@@ -86,12 +107,13 @@ def main():
         print(f'Evaluating on test set for iter {i}')
         test_reward, test_success = evaluate_rl2(
             env_name = test_benchmark, 
-            policy = policy_net,
+            agent=agent,
+            # policy = policy_net,
             iter_idx = i,
-            encoder = encoder_net,
+            # encoder = encoder_net,
             num_episodes=num_episodes,
             num_processes=len(test_tasks),
-            num_explore = num_explore,
+            # num_explore = num_explore,
             deterministic = False
         )
 
