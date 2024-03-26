@@ -104,7 +104,7 @@ class RandomizationWrapper(gym.Wrapper):
         if self.kind == "random_init_fixed20":
             self.env.set_task(self.subtasks[random.randint(0, 19)])
         elif self.kind == "random_init_last30":
-            self.env.set_task(self.subtasks[random.randint(20, 50)])
+            self.env.set_task(self.subtasks[random.randint(20, 49)])
         elif self.kind == "random_init_small_box":
             rand_vec = np.random.uniform(
                 self.reset_space_low, self.reset_space_high, size=self.reset_space_low.size
