@@ -76,6 +76,7 @@ class RandomizationWrapper(gym.Wrapper):
         "random_init_all",
         "random_init_fixed20",
         "random_init_small_box",
+        "random_init_last30"
     ]
 
     def __init__(self, env: gym.Env, subtasks: List[metaworld.Task], kind: str) -> None:
@@ -90,6 +91,9 @@ class RandomizationWrapper(gym.Wrapper):
 
         if kind == "random_init_fixed20":
             assert len(subtasks) >= 20
+        
+        if kind == "random_init_last30":
+            assert len(subtasks) >= 30
 
         if kind == "random_init_small_box":
             diff = env._random_reset_space.high - env._random_reset_space.low
@@ -99,6 +103,8 @@ class RandomizationWrapper(gym.Wrapper):
     def reset(self, **kwargs) -> np.ndarray:
         if self.kind == "random_init_fixed20":
             self.env.set_task(self.subtasks[random.randint(0, 19)])
+        elif self.kind == "random_init_last30":
+            self.env.set_task(self.subtasks[random.randint(20, 50)])
         elif self.kind == "random_init_small_box":
             rand_vec = np.random.uniform(
                 self.reset_space_low, self.reset_space_high, size=self.reset_space_low.size
