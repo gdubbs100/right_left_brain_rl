@@ -154,6 +154,13 @@ register(
 )
 
 register(
+    'ML_3_single-v2', # have _3 to avoid hacky loop
+    entry_point='environments.metaworld_envs.ml3:ML3SingleEnv',
+    max_episode_steps=500,
+    kwargs={'task_name':'reach-v2', 'train': True}
+)
+
+register(
     'continualMW-v0',
     entry_point = 'environments.metaworld_envs.test_continual_env:ContinualEnv',
     kwargs={'steps_per_env':10000, 'envs': None}

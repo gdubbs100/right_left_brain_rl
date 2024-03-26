@@ -279,6 +279,7 @@ class ContinualLearner:
                 with torch.no_grad():
 
                     latent, hidden_state = self.agent.get_prior(self.num_processes)
+                    # print(latent.size(), hidden_state.size())
                     # assert len(self.storage.latent) == 0  # make sure we emptied buffers
 
                     if self.args.algorithm == 'bicameral':
@@ -311,7 +312,9 @@ class ContinualLearner:
                         )
                         gating_values.append(torch.tensor(0.))
                     elif self.args.algorithm == 'right_only':
+                        # print(obs.size())
                         value, action = self.agent.act(obs, latent, None, None, deterministic=True)
+                        # print(action.size())
                         ## dummy gating value
                         gating_values.append(torch.tensor(0.))
                     else:

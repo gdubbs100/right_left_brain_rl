@@ -10,7 +10,8 @@ from continualworld_utils.constants import MT50
 from environments.env_utils.vec_env import VecEnvWrapper
 from environments.env_utils.vec_env.subproc_vec_env import SubprocVecEnv
 from environments.env_utils.vec_env.custom_vec_normalize import CustomVecNormalize
-
+from environments.parallel_envs import VecPyTorch
+from environments.env_utils.vec_env.vec_normalize import VecNormalize
 
 def make_continual_env(env_id, seed, rank, **kwargs):
     def _thunk():
@@ -52,9 +53,11 @@ def prepare_parallel_envs(envs, steps_per_env, num_processes, seed, gamma, norma
     )
 
     # returns tuple of (reward, norm_reward) if normalise_rew, (reward, reward) otherwise
-    subproc_envs = CustomVecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
+    # subproc_envs = CustomVecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
+    subproc_envs = VecNormalize(subproc_envs, normalise_rew=normalise_rew, ret_rms=None, gamma=gamma)
 
-    pytorch_envs = PyTorchVecEnvCont(subproc_envs, device)
+    # pytorch_envs = PyTorchVecEnvCont(subproc_envs, device)
+    pytorch_envs = VecPyTorch(subproc_envs, device)
     return pytorch_envs
 
 class PyTorchVecEnvCont(VecEnvWrapper):
