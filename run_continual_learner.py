@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--rollout_len', type=int, default=500, help="rollout len for each episode. MW default is 500")
     parser.add_argument('--num_processes', type=int, default=20, help="number of parallel processes to run - effectively controls batch size as one update is run per each episode x num_processes")
     parser.add_argument('--randomization', type=str, default='deterministic', help='randomisation setting for CW must be one of: deterministic, random_init_all, random_init_fixed20, random_init_small_box')
+    parser.add_argument('--task_set', type=str, default='test', help='run on training or testing tasks for ML3 - default is test')
 
     ## Arguments for bicameral algorithm
     ##NOTE: There are some parameter settings here that conflict - add checks?

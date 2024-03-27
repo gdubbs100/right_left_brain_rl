@@ -11,6 +11,8 @@ parser.add_argument('--log_folder', type=str, default='logs/baselines/random_age
 parser.add_argument('--randomization', type=str, default='random_init_fixed20', help = 'whether env randomises on reset')
 parser.add_argument('--run_folder', type=str, default='rl2_baseline/bicameral_rl2')
 parser.add_argument('--num_processes', type=str, default='8')
+parser.add_argument('--task_set', type=str, default='test', help='run on training or testing tasks for ML3 - default is test')
+
 
 args, _ = parser.parse_known_args()
 envs = [
@@ -31,7 +33,8 @@ base_args = [
     '--algorithm', args.algorithm, 
     '--steps_per_env', args.steps_per_env,
     '--log_folder', args.log_folder,
-    '--num_processes', args.num_processes
+    '--num_processes', args.num_processes,
+    '--task_set', args.task_set
 ]
 
 for env in envs:

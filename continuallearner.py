@@ -56,7 +56,7 @@ class ContinualLearner:
         self.raw_train_envs = prepare_base_envs(
             task_names, 
             benchmark=ML3(),
-            task_set = 'test', # we train on the test set of ML3 for bicameral
+            task_set = self.args.task_set,#'test', # we train on the test set of ML3 for bicameral
             randomization=randomization)
 
         ## get unique task names in order:
@@ -73,13 +73,6 @@ class ContinualLearner:
             normalise_rew=self.normalise_rewards,
             device=device
         )
-
-        # only eval on unique envs
-        # self.raw_test_envs = prepare_base_envs(
-        #     self.task_names, 
-        #     benchmark=ML3(),
-        #     task_set = 'test', # we train on the test set of ML3 for bicameral
-        # )
 
         # set params for runs
         self.num_processes = num_processes
@@ -529,7 +522,7 @@ class ContinualLearner:
         raw_test_envs = prepare_base_envs(
             self.task_names, 
             benchmark=ML3(),
-            task_set = 'test',
+            task_set = self.args.task_set,
         )
         test_envs = prepare_parallel_envs(
             envs=raw_test_envs, 
