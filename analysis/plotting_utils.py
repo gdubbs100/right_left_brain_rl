@@ -331,9 +331,9 @@ def get_left_only_vs_initial(train_df, test_df, left_eval_df, initial_reward_col
 
 def agg_left_vs_initial_results(train_df, test_df, left_eval_df, agg_col, initial_reward_col, left_only_reward_col, window, min_over):
     left_vs_initial = get_left_only_vs_initial(
-        train_data.query(f"~run_name.isin({to_remove})"),
-        test_data.query(f"~run_name.isin({to_remove})"),
-        left_eval_data,
+        train_df,
+        test_df,
+        left_eval_df,
         initial_reward_col=initial_reward_col, 
         left_only_reward_col=left_only_reward_col, 
         window=100, 
@@ -418,7 +418,7 @@ def plot_inital_reward_vs_final_left(
     left_vs_initial = get_left_only_vs_initial(
         train_df,
         test_df,
-        left_eval_data,
+        left_eval_df,
         initial_reward_col=initial_reward_col, 
         left_only_reward_col=left_only_reward_col, 
         window=window, 
