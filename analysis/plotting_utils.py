@@ -19,7 +19,7 @@ algs =[
     'left_only_double_params',
     'random',
     'right_only_double_params',
-    'right_only',
+    'right_only'
 ]
 
 PALETTE = dict()
@@ -240,7 +240,7 @@ def smooth_results_with_median(df, reward_col, window):
         .reset_index()
     )
 
-def get_left_min(df, reward_col, min_over=1e6):
+def get_left_median(df, reward_col, min_over=1e6):
     return (
         df
         .loc[:, ['frame', 'training_task', 'run_name', reward_col]]
@@ -248,6 +248,18 @@ def get_left_min(df, reward_col, min_over=1e6):
         .query(f'frame<={min_over}')
         .groupby(['training_task', 'run_name'])
         .median()
+        .reset_index()
+        .drop(['run_name', 'frame'], axis=1)
+        .rename(columns={reward_col:f"left_{reward_col}"})
+    )
+
+def get_left_min(df, reward_col):
+    return (
+        df
+        .loc[:, ['frame', 'training_task', 'run_name', reward_col]]
+        .query('run_name=="left_only_double_params"')
+        .groupby(['training_task', 'run_name'])
+        .min()
         .reset_index()
         .drop(['run_name', 'frame'], axis=1)
         .rename(columns={reward_col:f"left_{reward_col}"})
@@ -264,25 +276,47 @@ def compare_to_left_min(df, left_min, reward_col):
         .dropna()
     )
 
-def get_median_vs_left_min(df, reward_col, window, min_over, adjust_left = False):
+def get_median_vs_left_min(df, reward_col, window, min_over, use_left_min = False, use_left_median=False):
+
+    ## smoothes results using rolling median
     smoothed_df = smooth_results_with_median(
         df=df,
         reward_col=reward_col,
         window=window
     )
-    if adjust_left:
+    ## gets left aggregation
+    if use_left_min and not use_left_median:
+
+        ## minimum value achieved by left
         left_min = get_left_min(
-            df=df,
+            df=smoothed_df,
+            reward_col=reward_col
+        )
+        return compare_to_left_min(df=smoothed_df, left_min=left_min, reward_col=reward_col)
+    elif use_left_median and not use_left_min:
+
+        ## median value achieved by left
+        left_min = get_left_median(
+            df=smoothed_df,
             reward_col=reward_col,
             min_over=min_over
         )
-
         return compare_to_left_min(df=smoothed_df, left_min=left_min, reward_col=reward_col)
-    
+    elif use_left_median and use_left_min:
+        raise ValueError("At least one of use_left_min and use_left_median must be false")
     else:
         return smoothed_df
 
-def get_left_only_vs_initial(train_df, test_df, left_eval_df, initial_reward_col, left_only_reward_col, window, min_over):
+def get_left_only_vs_initial(
+    train_df, 
+    test_df, 
+    left_eval_df, 
+    initial_reward_col, 
+    left_only_reward_col, 
+    window, 
+    min_over,
+    use_left_median=False,
+    use_left_min=True):
     """
     Gets initial results for bicameral model and joins them with later results for the left hemisphere
     comparisons are made against a left-only baseline
@@ -294,11 +328,14 @@ def get_left_only_vs_initial(train_df, test_df, left_eval_df, initial_reward_col
             reward_col = initial_reward_col,
             window = window,
             min_over = min_over,
-            adjust_left = True
+            use_left_median=use_left_median,
+            use_left_min=use_left_min
         )
-        .query(f'frame=={min_over}')
         .loc[:,['training_task', 'run_name', initial_reward_col]]
         .rename(columns={initial_reward_col:f'initial_{initial_reward_col}'})
+        .groupby(['training_task', 'run_name'])
+        .min()
+        .reset_index()
     )
 
     ## compare left hemisphere vs left baseline performance
@@ -349,17 +386,20 @@ def agg_left_vs_initial_results(train_df, test_df, left_eval_df, agg_col, initia
     )
 
 ### MAIN PLOTTING FUNCTIONS
-def plot_reward_trajectory(df, reward_col, window, min_over, adjust_left, tasks, title, ylabel, figsize=(21, 14)):
+def plot_reward_trajectory(
+    df, reward_col, window, min_over, tasks, to_remove,
+    title, ylabel, figsize=(21, 14), use_left_median=False, use_left_min=False):
     """
     Plots a specified reward col with specified smoothing
     Option to present as ratio to left-only baseline results
     """
     to_plot = get_median_vs_left_min(
-        df = df,
+        df = df.query(f"~run_name.isin({to_remove})"),
         reward_col = reward_col,
         window = window,
         min_over = min_over,
-        adjust_left = adjust_left
+        use_left_median=use_left_median,
+        use_left_min=use_left_min
     )
 
     ## set out plots by task - assume tasks are 3x3 for now
@@ -376,7 +416,8 @@ def plot_reward_trajectory(df, reward_col, window, min_over, adjust_left, tasks,
             hue='run_name',
             ax = ax[i],
             palette=PALETTE,
-            alpha = .9
+            alpha = .75,
+            linewidth=2
         )
 
         ax[i].set(title=task, xlabel='Environment Steps')
@@ -385,17 +426,36 @@ def plot_reward_trajectory(df, reward_col, window, min_over, adjust_left, tasks,
         else:
             ax[i].set_ylabel('')
         ax[i].set_ylim(0)
+
+        ## show baselines
+        # random
+        random_mean = (
+            df
+            .query('run_name=="random"')
+            .query(f'training_task=="{task}"')
+            .loc[:,reward_col].mean()
+        )
+        ax[i].axhline(random_mean, c=PALETTE['random'], linewidth=2, alpha=.75)
+
+        # right only double
+        random_mean = (
+            df
+            .query('run_name=="right_only_double_params"')
+            .query(f'training_task=="{task}"')
+            .loc[:,reward_col].mean()
+        )
+        ax[i].axhline(random_mean, c=PALETTE['right_only_double_params'], linewidth=2, alpha=.75)
         
         # show left baseline value at 1 if adjust_left
-        if adjust_left:
+        if use_left_median or use_left_min:
             ax[i].axhline(1, c='black', alpha=.7)
-        if i > 0:
-            ax[i].get_legend().remove()
+        # if i > 0:
+        ax[i].get_legend().remove()
 
     plt.tight_layout()
     plt.show();
 
-    if adjust_left:
+    if use_left_median or use_left_min:
         return to_plot
 
 def plot_inital_reward_vs_final_left(
@@ -411,6 +471,8 @@ def plot_inital_reward_vs_final_left(
     xlabel=None,
     ylabel=None,
     plot_tiers = False,
+    use_left_median=False,
+    use_left_min=True
     ):
     """
     Scatter plot which compares initial bicameral results against final left hemisphere results
@@ -422,13 +484,15 @@ def plot_inital_reward_vs_final_left(
         initial_reward_col=initial_reward_col, 
         left_only_reward_col=left_only_reward_col, 
         window=window, 
-        min_over=min_over
+        min_over=min_over,
+        use_left_median=use_left_median,
+        use_left_min=use_left_min
     ).assign(tier=lambda x: x.training_task.apply(lambda y: TIER_DICT.get(y)))
     
     
     algorithms = np.unique(left_vs_initial.run_name)
     # hard code grid (1,3) depends on num algorithms
-    fig, ax = plt.subplots(1,3,figsize=(21, 10), sharex=True, sharey=True)
+    fig, ax = plt.subplots(1,3,figsize=figsize, sharex=True, sharey=True)
     ax = ax.flatten()
 
     plt.suptitle(title)
