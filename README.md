@@ -1,42 +1,31 @@
-# varibad_working
-Code taken from this repository and adjusted to my requirements: https://github.com/lmzintgraf/varibad/tree/master
+# Right-left brain in a Reinforcement Learning Agent
+We create a bi-hemispheric agent with specialised hemispheres based on the Novelty Routine Hypothesis.  
 
-# project 
-Build a bicameral agent with left/right hemispheres.
-Right hemisphere is designed to be a 'generalist' while left will learn specific tasks
-We meta-train the right hemisphere using RL^2 (using varibad implementation)
-We evaluate the combined bicameral agent in a continual learning context.
+# Running
+## Bi-hemispheric agents / left-only baselines
+These agents can be run from `run_continuallearner.py`.
 
-We use metaworld for our environment. We meta-train using ML10 training tasks and then evaluate on the ML10 test tasks.
+Example run Bi-cameral agent:
+```python ./run_continual_learner.py --seed 808 --learning_rate 0.00001 --run_name "random_init_fixed20_gatepen_reach-v2" --env_name "reach-v2" --run_folder "rl2_baseline/rl2_bicameral_baseline" --num_mini_batch 8 --ppo_epoch 8 --num_processes 20 --randomization "random_init_fixed20" --algorithm "bicameral" --steps_per_env 5000000 --log_folder "logs/bicameral_net" --entropy_coef 0.00001 --use_gating_penalty True --gating_alpha 0.75 --gating_beta 5```
 
-To perform our continual learning evaluation we will train an agent on the ML10 test tasks sequentially, and evaluate test performance on all tasks. Here we can assess forgetting and worst-case performance.
+Example run left-only baseline:
+```python ./run_continual_learner.py --seed 808 --run_name "random_init_fixed20_reach-v2" --env_name "door-open-v2" --run_folder "rl2_baseline/rl2_double_baseline" --num_mini_batch 8 --ppo_epoch 8 --num_processes 20 --randomization "random_init_fixed20" --algorithm "left_only" --steps_per_env 5000000 --log_folder "logs/left_only" --entropy_coef 0.00001 --learning_rate 0.00001```
 
-## TODO:
+## Random / right-only baselines
+As Random / Right-only baselines are just evaluated on sampled tasks, they run much faster and can be done in batches using `run_scenarios.py`
 
-### 1. Set up eval for ML10
-We want to evaluate model performance on ML10 environments. We want to be able to do so to verify the performance of RL^2 on ML10 test and train tasks.
-Get all historical actions / rewards and pass through model. eval on percent success on each environment in train and test tasks.
-Perhaps include this in the meta-learner function?
+Example run Random agents:
+```python ./run_scenarios.py --algorithm "random" --steps_per_env 100000 --log_folder ./random_agent --randomization "random_init_fixed20" --num_processes 20```
 
-### 2. Set up continual learning training + evaluation
-Set up a training loop which takes one task and trains on it for a specified number of iterations. Evaluate on all environments.
-What order of tasks? does it matter? do we want to look at different permutations/orderings?
 
-### 3. Build models to train
-After meta-training the right hemisphere, we need:
-1. bi-hemispheric network with right + left hemisphere and gating network
-2. EWC (single untrained network)
-3. EWC (applied to bi-hemispheric)
-4. Others should be relatively easy - e.g. left-untrained, right meta-trained, left + right untrained?
+## Meta-learning
+We have saved the trained models in `rl2_baseline`.
+- rl2_bicameral_baseline: the right-hemisphere network
+- rl2_double_baseline: the right-only baseline
+- rl2_bicameral_small_baseline: a small baseline used during development
 
-### 4. Environment requirements
-Need to create environments that can perform continual learning.
-Use continual world as an example.
-For Meta-world, do I want to randomly sample changing goals / objectives? or do I actually want to use the multi-task equivalent?
+To generate your own baseline you can run the `main.py` script, taken from the VariBad repository (see sources)
 
-#### Questions:
-- is ML10 test tasks ok for continual eval? or should I use the multi-task equivalent, which have (I think) common structure?
-- How many historical action, reward, obs values do I need to provide for evaluation of RL^2?
-- How to evaluate performance on Metaworld tasks? Use percent success? (seems to be what they did in paper)
-- training RL^2 on rewards - Metaworld tasks seem to have quite varied reward values. Does this skew the training?
-- should metaworld tasks be 'done' on success of task?
+## Sources
+Meta-training code for RL2 is taken from here: https://github.com/lmzintgraf/varibad/tree/master
+We also directly copied some environment utilities from the Continual World repo here: https://github.com/awarelab/continual_world
