@@ -40,6 +40,8 @@ def worker(remote, parent_remote, env_fn_wrapper):
                 remote.send(env.belief_dim)
             elif cmd == 'reset_task':
                 env.unwrapped.reset_task(data)
+            elif cmd == "set_attr":
+                remote.send(setattr(env, data[0], data[1]))
             else:
                 # try to get the attribute directly
                 remote.send(getattr(env.unwrapped, cmd))
@@ -126,9 +128,14 @@ class SubprocVecEnv(VecEnv):
         for remote in self.remotes:
             remote.send(('get_task', None))
         return np.stack([remote.recv() for remote in self.remotes])
-
+    
     def get_belief(self):
         self._assert_not_closed()
         for remote in self.remotes:
             remote.send(('get_belief', None))
         return np.stack([remote.recv() for remote in self.remotes])
+    
+    # def set_env_attr(self, attr, value) -> None:
+    #     """Set attribute inside vectorized environments (see base class)."""
+    #     self.remotes[0].send((attr, value))
+    #     self.remotes[0].recv()

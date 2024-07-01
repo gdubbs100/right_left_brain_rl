@@ -1,5 +1,6 @@
 numpy==1.22.0
-torch>=1.5.1
+## make sure you install right version of cuda (massive requires 11.1)
+torch==1.9.1
 torchvision>=0.6.1
 gym==0.17.2
 seaborn

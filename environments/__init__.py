@@ -108,5 +108,53 @@ register(
 register(
     'ML10-v2',
     entry_point='environments.metaworld_envs.custom_varibad_env:ML10Env',
-    max_episode_steps=500,
+    max_episode_steps=500
+)
+
+register(
+    'ML10_test-v2',
+    entry_point='environments.metaworld_envs.custom_varibad_env:ML10TestEnv',
+    max_episode_steps=500
+)
+
+register(
+    'CustomML10-v2',
+    entry_point='environments.metaworld_envs.custom_varibad_env:CustomML10Env',
+    max_episode_steps=500
+)
+
+register(
+    'CustomML10_test-v2',
+    entry_point='environments.metaworld_envs.custom_varibad_env:CustomML10TestEnv',
+    max_episode_steps=500
+)
+
+register(
+    'ML1-v2',
+    entry_point='environments.metaworld_envs.ml1:ML1Env',
+    max_episode_steps=500
+)
+
+register(
+    'ML3-v2',
+    entry_point='environments.metaworld_envs.ml3:ML3Env',
+    max_episode_steps=500
+)
+
+register(
+    'ML3_test-v2',
+    entry_point='environments.metaworld_envs.ml3:ML3TestEnv',
+    max_episode_steps=500
+)
+
+register(
+    'ML1_test-v2',
+    entry_point='environments.metaworld_envs.ml1:ML1TestEnv',
+    max_episode_steps=500
+)
+
+register(
+    'continualMW-v0',
+    entry_point = 'environments.metaworld_envs.test_continual_env:ContinualEnv',
+    kwargs={'steps_per_env':10000, 'envs': None}
 )

@@ -6,3 +6,5 @@ __pycache__
 logs/
 scripts/
 docker/
+ppo_imp/
+test_logs/

@@ -61,19 +61,25 @@ class VaribadVAE:
 
     def initialise_encoder(self):
         """ Initialises and returns an RNN encoder """
-        encoder = RNNEncoder(
-            args=self.args,
-            layers_before_gru=self.args.encoder_layers_before_gru,
-            hidden_size=self.args.encoder_gru_hidden_size,
-            layers_after_gru=self.args.encoder_layers_after_gru,
-            latent_dim=self.args.latent_dim,
-            action_dim=self.args.action_dim,
-            action_embed_dim=self.args.action_embedding_size,
-            state_dim=self.args.state_dim,
-            state_embed_dim=self.args.state_embedding_size,
-            reward_size=1,
-            reward_embed_size=self.args.reward_embedding_size,
-        ).to(device)
+
+        if self.args.load_model_from_checkpoint is None:
+            encoder = RNNEncoder(
+                args=self.args,
+                layers_before_gru=self.args.encoder_layers_before_gru,
+                hidden_size=self.args.encoder_gru_hidden_size,
+                layers_after_gru=self.args.encoder_layers_after_gru,
+                latent_dim=self.args.latent_dim,
+                action_dim=self.args.action_dim,
+                action_embed_dim=self.args.action_embedding_size,
+                state_dim=self.args.state_dim,
+                state_embed_dim=self.args.state_embedding_size,
+                reward_size=1,
+                reward_embed_size=self.args.reward_embedding_size,
+            ).to(device)
+        else:
+            encoder_file = self.args.load_model_from_checkpoint + '/models/encoder.pt'
+            print(f"Loading Encoder from: {encoder_file}")
+            encoder = torch.load(encoder_file).to(device)
         return encoder
 
     def initialise_decoder(self):

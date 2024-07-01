@@ -132,7 +132,12 @@ class Policy(nn.Module):
             self.dist = Categorical(hidden_layers[-1], num_outputs)
         elif action_space.__class__.__name__ == "Box":
             num_outputs = action_space.shape[0]
-            self.dist = DiagGaussian(hidden_layers[-1], num_outputs, init_std, self.args.norm_actions_pre_sampling)
+            self.dist = DiagGaussian(
+                hidden_layers[-1], 
+                num_outputs, 
+                init_std, 
+                self.args.norm_actions_pre_sampling,
+                self.args.policy_fix_std)
         else:
             raise NotImplementedError
 
@@ -303,7 +308,7 @@ class Categorical(nn.Module):
 
 
 class DiagGaussian(nn.Module):
-    def __init__(self, num_inputs, num_outputs, init_std, norm_actions_pre_sampling):
+    def __init__(self, num_inputs, num_outputs, init_std, norm_actions_pre_sampling, fix_std):
         super(DiagGaussian, self).__init__()
 
         init_ = lambda m: init(m,
@@ -311,9 +316,18 @@ class DiagGaussian(nn.Module):
                                lambda x: nn.init.constant_(x, 0))
 
         self.fc_mean = init_(nn.Linear(num_inputs, num_outputs))
-        self.logstd = nn.Parameter(np.log(torch.zeros(num_outputs) + init_std))
+        
         self.norm_actions_pre_sampling = norm_actions_pre_sampling
-        self.min_std = torch.tensor([1e-6]).to(device)
+
+        # fix_std = False if fix_std is None else fix_std
+        if fix_std:
+            self.logstd = nn.Parameter(np.log(torch.zeros(num_outputs) + init_std))
+            self.min_std = torch.tensor([init_std]).to(device)
+            self.max_std = torch.tensor([init_std]).to(device)
+        else:
+            self.logstd = nn.Parameter(np.log(torch.zeros(num_outputs) + init_std))
+            self.min_std = torch.tensor([1.0e-6]).to(device)
+            self.max_std = torch.tensor([1.0e6]).to(device)
 
     def forward(self, x):
 
@@ -321,6 +335,7 @@ class DiagGaussian(nn.Module):
         if self.norm_actions_pre_sampling:
             action_mean = torch.tanh(action_mean)
         std = torch.max(self.min_std, self.logstd.exp())
+        std = torch.min(self.max_std, self.logstd.exp())
         dist = FixedNormal(action_mean, std)
 
         return dist
