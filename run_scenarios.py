@@ -9,7 +9,7 @@ parser.add_argument('--algorithm', type = str, default = 'random', help = 'Give 
 parser.add_argument('--steps_per_env', type=str, default='1000000', help = 'number of iters')
 parser.add_argument('--log_folder', type=str, default='logs/baselines/random_agent', help = 'where to save results')
 parser.add_argument('--randomization', type=str, default='random_init_fixed20', help = 'whether env randomises on reset')
-parser.add_argument('--run_folder', type=str, default='rl2_baseline/bicameral_rl2')
+parser.add_argument('--run_folder', type=str, default='rl2_baseline/rl2_bicameral_baseline')
 parser.add_argument('--num_processes', type=str, default='8')
 parser.add_argument('--task_set', type=str, default='test', help='run on training or testing tasks for ML3 - default is test')
 

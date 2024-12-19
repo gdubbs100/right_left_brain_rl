@@ -81,6 +81,7 @@ class RandomizationWrapper(gym.Wrapper):
 
     def __init__(self, env: gym.Env, subtasks: List[metaworld.Task], kind: str) -> None:
         assert kind in RandomizationWrapper.ALLOWED_KINDS
+        env.reward_range = (0, 10) # addresses missing reward range for metaworld classes
         super().__init__(env)
         self.subtasks = subtasks
         self.kind = kind
